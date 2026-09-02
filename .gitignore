@@ -1,0 +1,4 @@
+*.gz
+books.json
+.env
+__pycache__/

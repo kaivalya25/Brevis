@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+
+<!-- ===== iPhone / home-screen meta tags ===== -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Brevis">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="Pick a mood, pick an author, pick a book. Read the whole story in ten minutes.">
+<title>Brevis</title>
+
+<style>
+/* ==========================================================================
+   BREVIS - all styling lives here.
+
+   WANT TO CHANGE THE COLOURS?
+   Edit the five values in :root just below. Everything else follows from them.
+   --ink   = text and buttons (near-black)
+   --paper = page background (warm off-white)
+   --line  = hairline borders
+   --mute  = secondary / grey text
+   --tint  = the pale wash behind pressed things
+   ========================================================================== */
+
+:root{
+  --ink:   #1c1c1c;
+  --paper: #fbfbf9;
+  --line:  #e3e2de;
+  --mute:  #8a8a85;
+  --tint:  #f1f0ec;
+
+  /* Type. Squarespace-style: a light serif for display, plain sans for the rest.
+     No web fonts are loaded - that would mean a CDN call, which this app avoids. */
+  --serif: "Canela", "Freight Display", "Hoefler Text", "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --sans:  -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  /* The one easing curve used by every transition in the app. */
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+html,body{ margin:0; padding:0; }
+
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+
+/* Safe-area padding so nothing hides under the notch or the home indicator. */
+.wrap{
+  max-width:640px;
+  margin:0 auto;
+  padding:
+    calc(env(safe-area-inset-top) + 34px)
+    calc(env(safe-area-inset-right) + 24px)
+    calc(env(safe-area-inset-bottom) + 56px)
+    calc(env(safe-area-inset-left) + 24px);
+}
+
+/* ---------- Screens: one visible at a time, toggled by the .on class ---------- */
+.screen{ display:none; }
+.screen.on{ display:block; }
+
+/* Squarespace-ish entrance: content rises and fades in, in sequence. */
+.screen.on > *{
+  opacity:0;
+  animation:rise .85s var(--ease) forwards;
+}
+.screen.on > *:nth-child(1){ animation-delay:.02s }
+.screen.on > *:nth-child(2){ animation-delay:.10s }
+.screen.on > *:nth-child(3){ animation-delay:.18s }
+.screen.on > *:nth-child(4){ animation-delay:.26s }
+.screen.on > *:nth-child(5){ animation-delay:.34s }
+.screen.on > *:nth-child(6){ animation-delay:.42s }
+.screen.on > *:nth-child(7){ animation-delay:.50s }
+
+@keyframes rise{
+  from{ opacity:0; transform:translateY(18px); }
+  to  { opacity:1; transform:none; }
+}
+
+@media (prefers-reduced-motion:reduce){
+  .screen.on > *{ animation:none; opacity:1; }
+}
+
+/* ---------- Type ---------- */
+h1{
+  font-family:var(--serif);
+  font-weight:400;
+  font-size:clamp(46px,15vw,78px);
+  line-height:1.02;
+  letter-spacing:-.025em;
+  margin:0 0 18px;
+}
+h2{
+  font-family:var(--serif);
+  font-weight:400;
+  font-size:clamp(30px,8vw,40px);
+  line-height:1.12;
+  letter-spacing:-.018em;
+  margin:0 0 10px;
+}
+
+/* The small uppercase label Squarespace puts above headings. */
+.eyebrow{
+  font-size:11px;
+  letter-spacing:.22em;
+  text-transform:uppercase;
+  color:var(--mute);
+  margin:0 0 20px;
+}
+
+.lede{
+  font-size:18px;
+  line-height:1.55;
+  color:#4a4a46;
+  margin:0 0 38px;
+  max-width:34em;
+}
+
+.sub{ color:var(--mute); font-size:14px; margin:0 0 28px; }
+
+hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
+
+/* ---------- Buttons ---------- */
+/* Every tappable thing is at least 44px tall - the Apple minimum target size. */
+.btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:52px;
+  padding:15px 34px;
+  border:1px solid var(--ink);
+  background:var(--ink);
+  color:var(--paper);
+  font-family:var(--sans);
+  font-size:12px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  cursor:pointer;
+  border-radius:0;
+  transition:background .35s var(--ease), color .35s var(--ease);
+}
+.btn:active{ background:var(--paper); color:var(--ink); }
+
+.btn.ghost{ background:transparent; color:var(--ink); }
+.btn.ghost:active{ background:var(--ink); color:var(--paper); }
+
+/* A card-style choice: genre tiles, author rows, book rows. */
+.card{
+  display:block;
+  width:100%;
+  min-height:56px;
+  text-align:left;
+  padding:18px 20px;
+  background:transparent;
+  border:1px solid var(--line);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:16px;
+  cursor:pointer;
+  border-radius:0;
+  transition:background .35s var(--ease), border-color .35s var(--ease), transform .35s var(--ease);
+}
+.card:active{ background:var(--tint); border-color:var(--ink); transform:translateY(1px); }
+
+.card .name{ font-family:var(--serif); font-size:21px; line-height:1.25; display:block; }
+.card .meta{ display:block; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--mute); margin-top:8px; }
+.card .hook{ display:block; font-size:14px; line-height:1.5; color:#5c5c57; margin-top:8px; }
+
+/* Genre grid - two columns, as specified. */
+.grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.grid .card{ text-align:center; padding:26px 12px; font-family:var(--serif); font-size:19px; }
+
+/* A plain vertical stack of cards. */
+.stack{ display:grid; gap:10px; }
+
+/* ---------- Back link ---------- */
+.back{
+  display:inline-flex;
+  align-items:center;
+  min-height:44px;
+  padding:10px 2px;
+  margin:0 0 22px;
+  background:none;
+  border:0;
+  color:var(--mute);
+  font-family:var(--sans);
+  font-size:11px;
+  letter-spacing:.2em;
+  text-transform:uppercase;
+  cursor:pointer;
+}
+.back:active{ color:var(--ink); }
+
+/* ---------- Inputs ---------- */
+.field{
+  width:100%;
+  min-height:52px;
+  padding:15px 16px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:0;
+  font-family:var(--sans);
+  font-size:16px;               /* 16px stops iOS zooming in on focus */
+  color:var(--ink);
+  -webkit-appearance:none;
+  transition:border-color .35s var(--ease);
+}
+.field:focus{ outline:none; border-color:var(--ink); }
+.field::placeholder{ color:var(--mute); }
+
+.label{
+  display:block;
+  font-size:11px;
+  letter-spacing:.2em;
+  text-transform:uppercase;
+  color:var(--mute);
+  margin:0 0 10px;
+}
+
+.row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+
+/* ---------- Summary prose ---------- */
+.prose p{
+  font-family:var(--serif);
+  font-size:19px;
+  line-height:1.72;
+  margin:0 0 1.25em;
+}
+.prose p:last-child{ margin-bottom:0; }
+
+/* The pale box used for notices, errors and the settings status line. */
+.note{
+  border:1px solid var(--line);
+  background:var(--tint);
+  padding:16px 18px;
+  font-size:14px;
+  line-height:1.55;
+  color:#5c5c57;
+  margin:0 0 26px;
+}
+
+/* Three dots that breathe while Gemini is writing. */
+.loading{ color:var(--mute); font-size:14px; letter-spacing:.12em; text-transform:uppercase; }
+.loading::after{
+  content:"";
+  display:inline-block;
+  width:1.4em;
+  text-align:left;
+  animation:dots 1.4s steps(4,end) infinite;
+}
+@keyframes dots{ 0%{content:""} 25%{content:"."} 50%{content:".."} 75%{content:"..."} }
+
+/* A quiet text link, used for the settings entry point. */
+.quiet{
+  display:inline-flex;
+  align-items:center;
+  min-height:44px;
+  background:none;
+  border:0;
+  padding:10px 2px;
+  color:var(--mute);
+  font-family:var(--sans);
+  font-size:12px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  text-decoration:underline;
+  text-underline-offset:4px;
+  cursor:pointer;
+}
+.quiet:active{ color:var(--ink); }
+
+.empty{ color:var(--mute); font-size:14px; padding:4px 0; }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<!-- =====================================================================
+     SCREEN 1 - Welcome
+     ===================================================================== -->
+<section class="screen on" id="welcome">
+  <p class="eyebrow">Brevis</p>
+  <h1>Read the<br>whole story.</h1>
+  <p class="lede">Pick a mood, pick an author, pick a book. Brevis lays out the entire plot - every twist, every ending - in about ten minutes of reading.</p>
+  <button class="btn" onclick="go('genre')">Begin</button>
+  <p style="margin:26px 0 0"><button class="quiet" onclick="go('settings')">API key settings</button></p>
+</section>
+
+<!-- =====================================================================
+     SCREEN 2 - Genre
+     ===================================================================== -->
+<section class="screen" id="genre">
+  <button class="back" onclick="go('welcome')">&larr; Back</button>
+  <p class="eyebrow">Step one</p>
+  <h2>What are you in the mood for?</h2>
+  <p class="sub">Choose one.</p>
+  <div class="grid" id="genreGrid"><!-- filled by JS --></div>
+</section>
+
+<!-- =====================================================================
+     SCREEN 3 - Author
+     ===================================================================== -->
+<section class="screen" id="author">
+  <button class="back" onclick="go('genre')">&larr; Genres</button>
+  <p class="eyebrow" id="authorEyebrow">Step two</p>
+  <h2>The best five</h2>
+  <p class="sub" id="authorSub">Ranked by how their books in this mood are rated.</p>
+  <div class="stack" id="authorList"><!-- filled by JS --></div>
+  <div>
+    <hr class="rule">
+    <label class="label" for="searchBox">Or look for someone else</label>
+    <input class="field" id="searchBox" type="search" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" placeholder="Search every author">
+    <div class="stack" id="searchList" style="margin-top:10px"><!-- filled by JS --></div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     SCREEN 4 - Books
+     ===================================================================== -->
+<section class="screen" id="books">
+  <button class="back" onclick="go('author')">&larr; Authors</button>
+  <p class="eyebrow">Step three</p>
+  <h2 id="booksTitle">Books</h2>
+  <p class="sub">Choose one to read the whole story.</p>
+  <div class="stack" id="bookList"><!-- filled by JS --></div>
+</section>
+
+<!-- =====================================================================
+     SCREEN 5 - Summary
+     ===================================================================== -->
+<section class="screen" id="summary">
+  <button class="back" onclick="go('books')">&larr; Other books</button>
+  <p class="eyebrow">The whole story</p>
+  <h2 id="summaryTitle">Title</h2>
+  <p class="sub" id="summaryMeta">Author</p>
+  <div id="summaryBody"><!-- filled by JS --></div>
+  <div class="row">
+    <button class="btn ghost" onclick="go('books')">Other books</button>
+    <button class="btn ghost" onclick="go('welcome')">Start over</button>
+  </div>
+</section>
+
+<!-- =====================================================================
+     SCREEN 6 - Settings
+     ===================================================================== -->
+<section class="screen" id="settings">
+  <button class="back" onclick="go('welcome')">&larr; Back</button>
+  <p class="eyebrow">Settings</p>
+  <h2>Gemini API key</h2>
+  <p class="sub">Brevis has no server. Your key is stored only in this browser and is sent straight to Google when a summary is written. A free key comes from aistudio.google.com/apikey.</p>
+  <div>
+    <label class="label" for="keyBox">Key</label>
+    <input class="field" id="keyBox" type="password" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="AIza...">
+    <div class="row">
+      <button class="btn" onclick="saveKey()">Save</button>
+      <button class="btn ghost" onclick="removeKey()">Remove</button>
+    </div>
+  </div>
+  <p class="note" id="keyState" style="margin-top:28px">Checking&hellip;</p>
+</section>
+
+</div>
+
+<script>
+/* ==========================================================================
+   BREVIS - all the logic lives here. Plain JavaScript, no libraries.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. THE BOOK LIST
+
+   WANT TO ADD OR CHANGE A BOOK?
+   Copy one of the lines below and edit it. The fields are:
+     t = title      a = author     r = average rating (out of 5)
+     y = year first published      g = list of mood tags (see GENRES below)
+     d = a one-line hook, shown under the title and used as the fallback
+         text when there is no API key
+
+   Two rules worth keeping:
+     - Give every author at least three books, or the author screen
+       dead-ends when you tap them.
+     - Give every mood at least eight books, or the top-five author
+       ranking for that mood stops meaning much.
+   -------------------------------------------------------------------------- */
+
+const BOOKS = [
+
+  /* --- J.R.R. Tolkien --- */
+  { t:"The Hobbit", a:"J.R.R. Tolkien", r:4.28, y:1937, g:["fantasy","classic"], d:"A comfortable hobbit is bullied out of his door and into a dragon's mountain." },
+  { t:"The Fellowship of the Ring", a:"J.R.R. Tolkien", r:4.38, y:1954, g:["fantasy","classic"], d:"Nine walkers set out to destroy a ring that wants to be found." },
+  { t:"The Return of the King", a:"J.R.R. Tolkien", r:4.53, y:1955, g:["fantasy","historical"], d:"The last battle for Middle-earth, and the long quiet after it." },
+
+  /* --- Ursula K. Le Guin --- */
+  { t:"A Wizard of Earthsea", a:"Ursula K. Le Guin", r:4.02, y:1968, g:["fantasy","classic"], d:"A gifted boy looses a shadow into the world and must learn its name." },
+  { t:"The Left Hand of Darkness", a:"Ursula K. Le Guin", r:4.08, y:1969, g:["sci-fi","mind-bending"], d:"An envoy on an ice world where nobody has a fixed gender." },
+  { t:"The Dispossessed", a:"Ursula K. Le Guin", r:4.24, y:1974, g:["sci-fi","mind-bending"], d:"A physicist travels between an anarchist moon and the rich planet it fled." },
+
+  /* --- Brandon Sanderson --- */
+  { t:"Mistborn: The Final Empire", a:"Brandon Sanderson", r:4.46, y:2006, g:["fantasy","dark"], d:"A street thief learns to burn metal and joins a crew planning to kill a god." },
+  { t:"The Way of Kings", a:"Brandon Sanderson", r:4.65, y:2010, g:["fantasy","dark"], d:"On a storm-scoured world, a slave, a soldier and a scholar circle the same secret." },
+  { t:"Warbreaker", a:"Brandon Sanderson", r:4.15, y:2009, g:["fantasy","funny"], d:"A princess sent to marry a god-king finds the palace stranger than the threat." },
+
+  /* --- Neil Gaiman --- */
+  { t:"American Gods", a:"Neil Gaiman", r:4.11, y:2001, g:["fantasy","dark"], d:"An ex-convict drives across America with a con man who is older than he looks." },
+  { t:"Neverwhere", a:"Neil Gaiman", r:4.17, y:1996, g:["fantasy","funny"], d:"One act of kindness drops a London office worker into the city beneath it." },
+  { t:"The Graveyard Book", a:"Neil Gaiman", r:4.12, y:2008, g:["fantasy","melancholic"], d:"A toddler escapes his family's murderer and is raised by the dead." },
+
+  /* --- Terry Pratchett --- */
+  { t:"Guards! Guards!", a:"Terry Pratchett", r:4.32, y:1989, g:["funny","fantasy"], d:"The worst night watch in the city is all that stands between a dragon and a coronation." },
+  { t:"Mort", a:"Terry Pratchett", r:4.29, y:1987, g:["funny","fantasy"], d:"Death takes an apprentice, who promptly refuses to let someone die." },
+  { t:"Small Gods", a:"Terry Pratchett", r:4.35, y:1992, g:["funny","mind-bending"], d:"A vast religion turns out to have exactly one true believer, and one very small god." },
+
+  /* --- Agatha Christie --- */
+  { t:"And Then There Were None", a:"Agatha Christie", r:4.28, y:1939, g:["thrilling","classic"], d:"Ten strangers on an island, and a rhyme that kills them one at a time." },
+  { t:"Murder on the Orient Express", a:"Agatha Christie", r:4.19, y:1934, g:["cozy","thrilling","classic"], d:"A man is stabbed on a snowbound train and every passenger has an alibi." },
+  { t:"The Murder of Roger Ackroyd", a:"Agatha Christie", r:4.24, y:1926, g:["cozy","mind-bending"], d:"A village doctor narrates a murder investigation that ends somewhere nobody expects." },
+
+  /* --- Jane Austen --- */
+  { t:"Pride and Prejudice", a:"Jane Austen", r:4.28, y:1813, g:["romantic","classic","funny"], d:"A sharp-tongued daughter and a proud rich man spend a novel being wrong about each other." },
+  { t:"Emma", a:"Jane Austen", r:4.03, y:1815, g:["romantic","classic","cozy"], d:"A young woman who is certain she is good at matchmaking is comprehensively not." },
+  { t:"Persuasion", a:"Jane Austen", r:4.16, y:1817, g:["romantic","classic","melancholic"], d:"Eight years after she was talked out of marrying him, he sails back into her life." },
+
+  /* --- Cormac McCarthy --- */
+  { t:"The Road", a:"Cormac McCarthy", r:4.00, y:2006, g:["dark","melancholic"], d:"A father and son push a shopping cart south through the ash of a dead world." },
+  { t:"Blood Meridian", a:"Cormac McCarthy", r:4.22, y:1985, g:["dark","historical"], d:"A runaway boy rides with scalp hunters across the 1850s borderlands." },
+  { t:"No Country for Old Men", a:"Cormac McCarthy", r:4.09, y:2005, g:["dark","thrilling"], d:"A welder takes a case of drug money and is hunted by something implacable." },
+
+  /* --- Kazuo Ishiguro --- */
+  { t:"Never Let Me Go", a:"Kazuo Ishiguro", r:3.85, y:2005, g:["melancholic","sci-fi"], d:"Three friends from an English boarding school slowly learn what they were made for." },
+  { t:"The Remains of the Day", a:"Kazuo Ishiguro", r:4.13, y:1989, g:["melancholic","historical"], d:"An English butler drives west and counts, too late, what his loyalty cost." },
+  { t:"Klara and the Sun", a:"Kazuo Ishiguro", r:3.72, y:2021, g:["melancholic","sci-fi"], d:"A solar-powered artificial friend watches a sick girl and prays to the sun." },
+
+  /* --- Haruki Murakami --- */
+  { t:"Norwegian Wood", a:"Haruki Murakami", r:4.03, y:1987, g:["melancholic","romantic"], d:"A student in 1960s Tokyo is caught between a fragile girl and a fearless one." },
+  { t:"Kafka on the Shore", a:"Haruki Murakami", r:4.15, y:2002, g:["mind-bending","melancholic"], d:"A runaway teenager and an old man who talks to cats converge on the same prophecy." },
+  { t:"The Wind-Up Bird Chronicle", a:"Haruki Murakami", r:4.18, y:1994, g:["mind-bending","dark"], d:"A missing cat leads an unemployed man down a dry well into wartime Manchuria." },
+
+  /* --- Isaac Asimov --- */
+  { t:"Foundation", a:"Isaac Asimov", r:4.22, y:1951, g:["sci-fi","classic"], d:"A mathematician predicts the fall of the galaxy and plants a seed to shorten the dark age." },
+  { t:"I, Robot", a:"Isaac Asimov", r:4.22, y:1950, g:["sci-fi","mind-bending"], d:"Nine puzzles in which three simple laws of robotics go quietly wrong." },
+  { t:"The Gods Themselves", a:"Isaac Asimov", r:4.08, y:1972, g:["sci-fi","mind-bending"], d:"Free energy from a parallel universe is a bargain, and the bill is the sun." },
+
+  /* --- Philip K. Dick --- */
+  { t:"Do Androids Dream of Electric Sheep?", a:"Philip K. Dick", r:4.09, y:1968, g:["sci-fi","mind-bending"], d:"A bounty hunter retires escaped androids and stops being sure what he is." },
+  { t:"Ubik", a:"Philip K. Dick", r:4.06, y:1969, g:["mind-bending","sci-fi"], d:"After an explosion on the moon, time starts running backwards around the survivors." },
+  { t:"The Man in the High Castle", a:"Philip K. Dick", r:3.62, y:1962, g:["sci-fi","historical","mind-bending"], d:"America after the Axis won, and a banned novel in which it didn't." },
+
+  /* --- Gillian Flynn --- */
+  { t:"Gone Girl", a:"Gillian Flynn", r:4.11, y:2012, g:["thrilling","dark","mind-bending"], d:"A wife vanishes on her anniversary and her diary tells a very tidy story." },
+  { t:"Sharp Objects", a:"Gillian Flynn", r:3.95, y:2006, g:["thrilling","dark"], d:"A reporter goes home to cover two dead girls and meets her mother again." },
+  { t:"Dark Places", a:"Gillian Flynn", r:4.00, y:2009, g:["thrilling","dark"], d:"The survivor of a family massacre reopens the case that sent her brother to prison." },
+
+  /* --- Stephen King --- */
+  { t:"The Shining", a:"Stephen King", r:4.27, y:1977, g:["dark","thrilling"], d:"A recovering alcoholic takes a winter caretaking job in a hotel that wants his son." },
+  { t:"It", a:"Stephen King", r:4.26, y:1986, g:["dark","thrilling"], d:"Seven adults return to the town that ate their childhood, and the thing under it." },
+  { t:"11/22/63", a:"Stephen King", r:4.32, y:2011, g:["historical","thrilling","mind-bending"], d:"A teacher walks through a pantry into 1958 and sets out to stop an assassination." },
+
+  /* --- Tana French --- */
+  { t:"In the Woods", a:"Tana French", r:3.85, y:2007, g:["thrilling","melancholic"], d:"A detective works a child's murder in the wood where his friends disappeared." },
+  { t:"The Likeness", a:"Tana French", r:4.11, y:2008, g:["thrilling","mind-bending"], d:"A murdered woman is the detective's double, so the detective takes her life." },
+  { t:"Broken Harbour", a:"Tana French", r:4.04, y:2012, g:["thrilling","dark"], d:"A family is attacked in a half-built estate full of holes punched in the walls." },
+
+  /* --- Louise Penny --- */
+  { t:"Still Life", a:"Louise Penny", r:3.98, y:2005, g:["cozy","thrilling"], d:"A retired teacher is found dead in the woods outside a village that has no crime." },
+  { t:"A Fatal Grace", a:"Louise Penny", r:4.10, y:2006, g:["cozy","thrilling"], d:"A universally disliked woman is electrocuted at a curling match on Christmas." },
+  { t:"The Cruellest Month", a:"Louise Penny", r:4.14, y:2007, g:["cozy","thrilling"], d:"An Easter seance in an abandoned house leaves one of the guests dead of fright." },
+
+  /* --- Alexander McCall Smith --- */
+  { t:"The No. 1 Ladies' Detective Agency", a:"Alexander McCall Smith", r:3.90, y:1998, g:["cozy","funny"], d:"Botswana's only female detective opens shop with a teapot and good judgement." },
+  { t:"Tears of the Giraffe", a:"Alexander McCall Smith", r:4.05, y:2000, g:["cozy","melancholic"], d:"An American mother asks what happened to the son she lost to the bush ten years ago." },
+  { t:"Morality for Beautiful Girls", a:"Alexander McCall Smith", r:4.05, y:2001, g:["cozy","funny"], d:"A poisoning, a beauty contest and an agency that cannot pay its rent." },
+
+  /* --- Becky Chambers --- */
+  { t:"The Long Way to a Small, Angry Planet", a:"Becky Chambers", r:4.16, y:2014, g:["sci-fi","cozy"], d:"The crew of a tunnelling ship take a long job and mostly just look after each other." },
+  { t:"A Closed and Common Orbit", a:"Becky Chambers", r:4.29, y:2016, g:["sci-fi","cozy"], d:"A ship's mind wakes up in an illegal body and has to learn how to be a person." },
+  { t:"A Psalm for the Wild-Built", a:"Becky Chambers", r:4.19, y:2021, g:["cozy","sci-fi"], d:"A tea monk meets the first robot to speak to humans in centuries, and is asked what people need." },
+
+  /* --- T.J. Klune --- */
+  { t:"The House in the Cerulean Sea", a:"T.J. Klune", r:4.38, y:2020, g:["cozy","fantasy","romantic"], d:"A rule-following inspector is sent to an island orphanage of dangerous children." },
+  { t:"Under the Whispering Door", a:"T.J. Klune", r:4.11, y:2021, g:["cozy","melancholic"], d:"A newly dead lawyer is parked in a teashop and given a week to accept it." },
+  { t:"In the Lives of Puppets", a:"T.J. Klune", r:3.95, y:2023, g:["cozy","sci-fi"], d:"A human boy raised by robots in a forest goes to the city to steal his father back." },
+
+  /* --- Nick Hornby --- */
+  { t:"High Fidelity", a:"Nick Hornby", r:3.92, y:1995, g:["funny","romantic"], d:"A record shop owner ranks his top five break-ups and phones them all." },
+  { t:"About a Boy", a:"Nick Hornby", r:3.87, y:1998, g:["funny","melancholic"], d:"A man who does nothing invents a child, then acquires a real one." },
+  { t:"Fever Pitch", a:"Nick Hornby", r:3.86, y:1992, g:["funny","melancholic"], d:"A life told entirely through the football matches that ruined it." },
+
+  /* --- Douglas Adams --- */
+  { t:"The Hitchhiker's Guide to the Galaxy", a:"Douglas Adams", r:4.23, y:1979, g:["funny","sci-fi"], d:"Earth is demolished for a bypass and one man escapes in his dressing gown." },
+  { t:"The Restaurant at the End of the Universe", a:"Douglas Adams", r:4.20, y:1980, g:["funny","sci-fi"], d:"Dinner is served while the universe ends, repeatedly, as floor show." },
+  { t:"Dirk Gently's Holistic Detective Agency", a:"Douglas Adams", r:3.91, y:1987, g:["funny","mind-bending"], d:"A detective who believes everything is connected solves a murder, a ghost and a sofa." },
+
+  /* --- Kurt Vonnegut --- */
+  { t:"Slaughterhouse-Five", a:"Kurt Vonnegut", r:4.09, y:1969, g:["mind-bending","funny","classic"], d:"A prisoner of war in Dresden comes unstuck in time and lives his life out of order." },
+  { t:"Cat's Cradle", a:"Kurt Vonnegut", r:4.16, y:1963, g:["funny","mind-bending","dark"], d:"A substance that freezes all water is left in the hands of three careless siblings." },
+  { t:"Breakfast of Champions", a:"Kurt Vonnegut", r:4.03, y:1973, g:["funny","mind-bending"], d:"A car dealer reads a bad science fiction novel and decides everyone else is a robot." },
+
+  /* --- Hilary Mantel --- */
+  { t:"Wolf Hall", a:"Hilary Mantel", r:3.90, y:2009, g:["historical","dark"], d:"A blacksmith's son becomes the most useful man in the court of Henry VIII." },
+  { t:"Bring Up the Bodies", a:"Hilary Mantel", r:4.19, y:2012, g:["historical","thrilling"], d:"Cromwell is asked to remove a queen, and finds a way to do it in nine days." },
+  { t:"The Mirror & the Light", a:"Hilary Mantel", r:4.03, y:2020, g:["historical","melancholic"], d:"Four years at the top, and the long fall of a man who knew too much." },
+
+  /* --- Ken Follett --- */
+  { t:"The Pillars of the Earth", a:"Ken Follett", r:4.32, y:1989, g:["historical","romantic"], d:"Building a cathedral in a twelfth-century town takes two generations and every enemy it has." },
+  { t:"World Without End", a:"Ken Follett", r:4.28, y:2007, g:["historical","dark"], d:"Four children see something in the woods, and the plague arrives two hundred years into their town's story." },
+  { t:"Eye of the Needle", a:"Ken Follett", r:4.06, y:1978, g:["thrilling","historical"], d:"A German spy learns the D-Day secret and is stranded on an island with one woman." },
+
+  /* --- Anthony Doerr --- */
+  { t:"All the Light We Cannot See", a:"Anthony Doerr", r:4.32, y:2014, g:["historical","melancholic"], d:"A blind French girl and a German boy with a talent for radios meet once, in Saint-Malo." },
+  { t:"Cloud Cuckoo Land", a:"Anthony Doerr", r:4.06, y:2021, g:["historical","mind-bending"], d:"One lost Greek story is carried by five people across six hundred years." },
+  { t:"About Grace", a:"Anthony Doerr", r:3.51, y:2004, g:["melancholic","historical"], d:"A man who dreams the future dreams his daughter drowning, and runs." },
+
+  /* --- Charles Dickens --- */
+  { t:"Great Expectations", a:"Charles Dickens", r:3.79, y:1861, g:["classic","historical"], d:"A blacksmith's boy is handed a fortune by someone he would never have guessed." },
+  { t:"A Tale of Two Cities", a:"Charles Dickens", r:3.86, y:1859, g:["classic","historical","dark"], d:"Two men who look alike, one revolution, and a substitution at the guillotine." },
+  { t:"David Copperfield", a:"Charles Dickens", r:4.00, y:1850, g:["classic","melancholic"], d:"A boy is sent to the bottle factory and writes his way back out." },
+
+  /* --- Fyodor Dostoevsky --- */
+  { t:"Crime and Punishment", a:"Fyodor Dostoevsky", r:4.26, y:1866, g:["classic","dark","mind-bending"], d:"A student kills a pawnbroker to prove a theory, then cannot live inside it." },
+  { t:"The Brothers Karamazov", a:"Fyodor Dostoevsky", r:4.34, y:1880, g:["classic","mind-bending"], d:"Three brothers, one loathsome father, and the question of who wanted him dead." },
+  { t:"Notes from Underground", a:"Fyodor Dostoevsky", r:4.10, y:1864, g:["classic","dark","melancholic"], d:"A spiteful retired clerk explains, at length, why he ruined his own life." },
+
+  /* --- Charlotte Bronte --- */
+  { t:"Jane Eyre", a:"Charlotte Bronte", r:4.14, y:1847, g:["classic","romantic","dark"], d:"A governess falls for her employer and hears laughter from the third floor." },
+  { t:"Villette", a:"Charlotte Bronte", r:3.94, y:1853, g:["classic","romantic","melancholic"], d:"An English teacher alone in a foreign school keeps almost everything from the reader." },
+  { t:"Shirley", a:"Charlotte Bronte", r:3.71, y:1849, g:["classic","historical"], d:"Two very different women in a Yorkshire mill town during the machine riots." },
+
+  /* --- Emily Henry --- */
+  { t:"Beach Read", a:"Emily Henry", r:3.98, y:2020, g:["romantic","funny"], d:"Two blocked writers in neighbouring beach houses swap genres for the summer." },
+  { t:"People We Meet on Vacation", a:"Emily Henry", r:4.02, y:2021, g:["romantic","funny"], d:"Best friends take one trip a year until the trip that ends it, and then one more." },
+  { t:"Book Lovers", a:"Emily Henry", r:4.06, y:2022, g:["romantic","funny","cozy"], d:"A ruthless literary agent keeps running into the editor she cannot stand." },
+
+  /* --- Sally Rooney --- */
+  { t:"Normal People", a:"Sally Rooney", r:3.83, y:2018, g:["romantic","melancholic"], d:"Two Irish teenagers keep finding and losing each other for four years." },
+  { t:"Conversations with Friends", a:"Sally Rooney", r:3.72, y:2017, g:["romantic","melancholic"], d:"A student and her ex-girlfriend fall into the lives of an older married couple." },
+  { t:"Beautiful World, Where Are You", a:"Sally Rooney", r:3.72, y:2021, g:["melancholic","romantic"], d:"Four friends in their thirties email each other about whether any of this is worth it." },
+
+  /* --- Madeline Miller --- */
+  { t:"The Song of Achilles", a:"Madeline Miller", r:4.36, y:2011, g:["romantic","historical","melancholic"], d:"The Trojan war told by the boy who loved Achilles before anyone had heard of him." },
+  { t:"Circe", a:"Madeline Miller", r:4.26, y:2018, g:["fantasy","historical","romantic"], d:"A minor goddess is exiled to an island and becomes the witch of the myths." },
+  { t:"Galatea", a:"Madeline Miller", r:3.72, y:2013, g:["fantasy","dark"], d:"The statue Pygmalion carved and married gets to speak for herself." },
+
+  /* --- Andy Weir --- */
+  { t:"The Martian", a:"Andy Weir", r:4.41, y:2011, g:["sci-fi","funny"], d:"An astronaut left for dead on Mars does the arithmetic on staying alive." },
+  { t:"Project Hail Mary", a:"Andy Weir", r:4.52, y:2021, g:["sci-fi","funny"], d:"A man wakes on a ship with no memory, two dead crewmates and one job." },
+  { t:"Artemis", a:"Andy Weir", r:3.65, y:2017, g:["sci-fi","thrilling"], d:"A smuggler on the moon takes one lucrative sabotage job too many." },
+
+  /* --- Liu Cixin --- */
+  { t:"The Three-Body Problem", a:"Liu Cixin", r:4.08, y:2008, g:["sci-fi","mind-bending"], d:"A physicist's suicide, a strange video game, and an answered signal from the stars." },
+  { t:"The Dark Forest", a:"Liu Cixin", r:4.47, y:2008, g:["sci-fi","mind-bending"], d:"Four men are given unlimited power to plan a defence nobody may overhear." },
+  { t:"Death's End", a:"Liu Cixin", r:4.51, y:2010, g:["sci-fi","mind-bending"], d:"An engineer sleeps through centuries as the universe reveals its rules." },
+
+  /* --- Frank Herbert --- */
+  { t:"Dune", a:"Frank Herbert", r:4.27, y:1965, g:["sci-fi","classic"], d:"A duke's son is dispossessed on a desert world and becomes its prophesied leader." },
+  { t:"Dune Messiah", a:"Frank Herbert", r:3.90, y:1969, g:["sci-fi","dark"], d:"Twelve years of holy war later, the emperor is trapped inside his own myth." },
+  { t:"Children of Dune", a:"Frank Herbert", r:3.92, y:1976, g:["sci-fi","dark"], d:"Twins born already knowing everything their ancestors knew try to break the future." },
+
+  /* --- Octavia E. Butler --- */
+  { t:"Kindred", a:"Octavia E. Butler", r:4.28, y:1979, g:["sci-fi","historical","dark"], d:"A Black writer in 1976 is pulled back to a Maryland plantation to save a boy." },
+  { t:"Parable of the Sower", a:"Octavia E. Butler", r:4.24, y:1993, g:["sci-fi","dark"], d:"A girl who feels others' pain walks north through a collapsing California." },
+  { t:"Wild Seed", a:"Octavia E. Butler", r:4.19, y:1980, g:["sci-fi","fantasy","dark"], d:"An immortal body-thief meets a shapeshifting healer and starts a four-century argument." },
+
+  /* --- Toni Morrison --- */
+  { t:"Beloved", a:"Toni Morrison", r:3.94, y:1987, g:["classic","dark","historical"], d:"A house outside Cincinnati is haunted by the daughter its mother killed." },
+  { t:"Song of Solomon", a:"Toni Morrison", r:4.05, y:1977, g:["classic","melancholic"], d:"A man called Milkman goes south for gold and finds his family's name instead." },
+  { t:"The Bluest Eye", a:"Toni Morrison", r:4.03, y:1970, g:["classic","dark","melancholic"], d:"A girl in 1941 Ohio prays every night for blue eyes." },
+
+  /* --- George Orwell --- */
+  { t:"1984", a:"George Orwell", r:4.19, y:1949, g:["classic","dark","sci-fi"], d:"A clerk who edits the past starts a diary, which is the beginning of the end." },
+  { t:"Animal Farm", a:"George Orwell", r:3.98, y:1945, g:["classic","dark"], d:"The animals take the farm, and the pigs learn to walk." },
+  { t:"Homage to Catalonia", a:"George Orwell", r:4.20, y:1938, g:["historical","classic"], d:"A volunteer in the Spanish Civil War watches his own side turn on him." },
+
+  /* --- Donna Tartt --- */
+  { t:"The Secret History", a:"Donna Tartt", r:4.18, y:1992, g:["dark","thrilling","mind-bending"], d:"Five classics students at a small college kill a friend, and the book starts after." },
+  { t:"The Goldfinch", a:"Donna Tartt", r:3.92, y:2013, g:["melancholic","dark"], d:"A boy survives a museum bombing and walks out holding a painting he never gives back." },
+  { t:"The Little Friend", a:"Donna Tartt", r:3.53, y:2002, g:["dark","thrilling"], d:"A twelve-year-old decides to solve her brother's murder, twelve years late." },
+
+  /* --- Susanna Clarke --- */
+  { t:"Jonathan Strange & Mr Norrell", a:"Susanna Clarke", r:3.90, y:2004, g:["fantasy","historical"], d:"Two magicians revive English magic during the Napoleonic wars and fall out badly." },
+  { t:"Piranesi", a:"Susanna Clarke", r:4.24, y:2020, g:["mind-bending","fantasy","melancholic"], d:"A gentle man keeps records in an endless house of statues and tides." },
+  { t:"The Ladies of Grace Adieu", a:"Susanna Clarke", r:3.72, y:2006, g:["fantasy","cozy"], d:"Eight quiet English stories in which the fairies are never quite safe." },
+
+  /* --- Ruth Ware --- */
+  { t:"In a Dark, Dark Wood", a:"Ruth Ware", r:3.61, y:2015, g:["thrilling","dark"], d:"A hen weekend in a glass house in the woods, and a phone with no signal." },
+  { t:"The Woman in Cabin 10", a:"Ruth Ware", r:3.68, y:2016, g:["thrilling","mind-bending"], d:"A journalist sees a body go overboard from a luxury cruise where nobody is missing." },
+  { t:"The Turn of the Key", a:"Ruth Ware", r:3.90, y:2019, g:["thrilling","dark"], d:"A nanny writes from prison about the smart house that would not let her sleep." }
+];
+
+/* --------------------------------------------------------------------------
+   2. THE MOODS
+
+   The tag on the left must match the strings used in the g:[] lists above.
+   The label on the right is what the button says. Add or rename freely.
+   -------------------------------------------------------------------------- */
+
+const GENRES = [
+  { tag:"cozy",        label:"Cozy" },
+  { tag:"thrilling",   label:"Thrilling" },
+  { tag:"romantic",    label:"Romantic" },
+  { tag:"sci-fi",      label:"Sci-fi" },
+  { tag:"fantasy",     label:"Fantasy" },
+  { tag:"melancholic", label:"Melancholic" },
+  { tag:"funny",       label:"Funny" },
+  { tag:"mind-bending",label:"Mind-bending" },
+  { tag:"historical",  label:"Historical" },
+  { tag:"dark",        label:"Dark" },
+  { tag:"classic",     label:"Classic" }
+];
+
+/* --------------------------------------------------------------------------
+   3. SMALL HELPERS
+   -------------------------------------------------------------------------- */
+
+/* Escape anything before it goes near innerHTML. Book titles contain
+   apostrophes and ampersands, and model output can contain anything at all,
+   so nothing is ever written to the page without passing through here. */
+function esc(s){
+  return String(s)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#39;");
+}
+
+/* Show one screen and hide the rest. That is the whole navigation system:
+   no router, no history, no URLs. */
+function go(id){
+  var screens = document.querySelectorAll(".screen");
+  for (var i=0; i<screens.length; i++) screens[i].classList.remove("on");
+  var next = document.getElementById(id);
+  if (next) next.classList.add("on");
+  window.scrollTo(0,0);
+}
+
+/* localStorage throws in Safari private browsing, so every call is wrapped.
+   If storage is unavailable the app still works - the key just is not kept. */
+var store = {
+  get: function(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+  set: function(k,v){ try { localStorage.setItem(k,v); return true; } catch(e){ return false; } },
+  del: function(k){ try { localStorage.removeItem(k); return true; } catch(e){ return false; } }
+};
+
+var KEY_NAME = "brevis_gemini_key";
+
+/* What the user has chosen so far. */
+var state = { genre:null, genreLabel:"", author:null, book:null };
+
+/* Summaries already written, keyed by title, so reopening a book is free. */
+var cache = {};
+
+/* --------------------------------------------------------------------------
+   4. SCREEN 2 - the mood grid
+   -------------------------------------------------------------------------- */
+
+function renderGenres(){
+  var html = "";
+  for (var i=0; i<GENRES.length; i++){
+    var g = GENRES[i];
+    html += '<button class="card" onclick="pickGenre(\'' + esc(g.tag) + '\')">' + esc(g.label) + '</button>';
+  }
+  document.getElementById("genreGrid").innerHTML = html;
+}
+
+function pickGenre(tag){
+  state.genre = tag;
+  state.genreLabel = tag;
+  for (var i=0; i<GENRES.length; i++) if (GENRES[i].tag === tag) state.genreLabel = GENRES[i].label;
+  document.getElementById("authorEyebrow").textContent = state.genreLabel;
+  document.getElementById("authorSub").textContent =
+    "Ranked by how their " + state.genreLabel.toLowerCase() + " books are rated.";
+  document.getElementById("searchBox").value = "";
+  document.getElementById("searchList").innerHTML = "";
+  renderAuthors();
+  go("author");
+}
+
+/* --------------------------------------------------------------------------
+   5. SCREEN 3 - the top five authors, and the search box
+
+   Ranking: keep only the books tagged with the chosen mood, group them by
+   author, average the ratings WITHIN THAT MOOD, then add a small nudge for
+   having written several of them. The nudge stops one lucky 4.5 from
+   outranking a writer with three strong books in the same mood.
+   -------------------------------------------------------------------------- */
+
+function topAuthors(tag){
+  var groups = {};
+  for (var i=0; i<BOOKS.length; i++){
+    var b = BOOKS[i];
+    if (b.g.indexOf(tag) === -1) continue;
+    if (!groups[b.a]) groups[b.a] = { name:b.a, sum:0, count:0 };
+    groups[b.a].sum += b.r;
+    groups[b.a].count += 1;
+  }
+
+  var list = [];
+  for (var name in groups){
+    var g = groups[name];
+    var avg = g.sum / g.count;
+    list.push({
+      name:  g.name,
+      avg:   avg,
+      count: g.count,
+      score: avg + Math.min(g.count, 3) * 0.05   /* the consistency nudge */
+    });
+  }
+
+  list.sort(function(a,b){ return b.score - a.score; });
+  return list.slice(0, 5);
+}
+
+function renderAuthors(){
+  var list = topAuthors(state.genre);
+  var html = "";
+  for (var i=0; i<list.length; i++){
+    var a = list[i];
+    html += '<button class="card" onclick="pickAuthor(' + jsArg(a.name) + ')">' +
+              '<span class="name">' + esc(a.name) + '</span>' +
+              '<span class="meta">' + a.avg.toFixed(2) + ' average &middot; ' +
+                a.count + ' ' + (a.count === 1 ? 'book' : 'books') + ' in ' +
+                esc(state.genreLabel.toLowerCase()) +
+              '</span>' +
+            '</button>';
+  }
+  if (!html) html = '<p class="empty">No authors in this mood yet.</p>';
+  document.getElementById("authorList").innerHTML = html;
+}
+
+/* Quote a string so it is safe both as a JavaScript string and inside an
+   onclick="..." attribute: escape it for JavaScript first, then for HTML. */
+function jsArg(s){
+  var js = String(s).replace(/\\/g,"\\\\").replace(/"/g,'\\"');
+  return "&quot;" + esc(js) + "&quot;";
+}
+
+/* The search looks at EVERY author in the list, not just the current mood,
+   so someone who came in through Cozy can still get to Cormac McCarthy. */
+function searchAuthors(query){
+  var q = query.trim().toLowerCase();
+  if (q.length < 2) return [];
+
+  var groups = {};
+  for (var i=0; i<BOOKS.length; i++){
+    var b = BOOKS[i];
+    if (b.a.toLowerCase().indexOf(q) === -1) continue;
+    if (!groups[b.a]) groups[b.a] = { name:b.a, sum:0, count:0 };
+    groups[b.a].sum += b.r;
+    groups[b.a].count += 1;
+  }
+
+  var list = [];
+  for (var name in groups){
+    var g = groups[name];
+    list.push({ name:g.name, avg:g.sum/g.count, count:g.count });
+  }
+  list.sort(function(a,b){ return b.avg - a.avg; });
+  return list.slice(0, 6);
+}
+
+function renderSearch(){
+  var box = document.getElementById("searchBox");
+  var out = document.getElementById("searchList");
+  var q = box.value;
+
+  if (q.trim().length < 2){ out.innerHTML = ""; return; }
+
+  var list = searchAuthors(q);
+  if (!list.length){
+    out.innerHTML = '<p class="empty">Nobody by that name.</p>';
+    return;
+  }
+
+  var html = "";
+  for (var i=0; i<list.length; i++){
+    var a = list[i];
+    html += '<button class="card" onclick="pickAuthor(' + jsArg(a.name) + ')">' +
+              '<span class="name">' + esc(a.name) + '</span>' +
+              '<span class="meta">' + a.avg.toFixed(2) + ' average &middot; ' +
+                a.count + ' ' + (a.count === 1 ? 'book' : 'books') + '</span>' +
+            '</button>';
+  }
+  out.innerHTML = html;
+}
+
+/* --------------------------------------------------------------------------
+   6. SCREEN 4 - that author's books
+
+   Books tagged with the chosen mood come first, best rated first. If that
+   leaves fewer than three, the rest of the author's work is added underneath
+   so the screen is never a dead end. Never more than five.
+   -------------------------------------------------------------------------- */
+
+function booksFor(author, tag){
+  var inMood = [], others = [];
+  for (var i=0; i<BOOKS.length; i++){
+    var b = BOOKS[i];
+    if (b.a !== author) continue;
+    if (tag && b.g.indexOf(tag) !== -1) inMood.push(b); else others.push(b);
+  }
+  var byRating = function(x,y){ return y.r - x.r; };
+  inMood.sort(byRating);
+  others.sort(byRating);
+
+  var list = inMood.slice(0);
+  if (list.length < 3) list = list.concat(others.slice(0, 3 - list.length));
+  return list.slice(0, 5);
+}
+
+function pickAuthor(name){
+  state.author = name;
+  document.getElementById("booksTitle").textContent = name;
+
+  var list = booksFor(name, state.genre);
+  var html = "";
+  for (var i=0; i<list.length; i++){
+    var b = list[i];
+    html += '<button class="card" onclick="pickBook(' + jsArg(b.t) + ')">' +
+              '<span class="name">' + esc(b.t) + '</span>' +
+              '<span class="meta">' + b.r.toFixed(2) + ' &middot; ' + b.y + '</span>' +
+              '<span class="hook">' + esc(b.d) + '</span>' +
+            '</button>';
+  }
+  if (!html) html = '<p class="empty">No books listed for this author.</p>';
+  document.getElementById("bookList").innerHTML = html;
+
+  go("books");
+}
+
+function findBook(title){
+  for (var i=0; i<BOOKS.length; i++) if (BOOKS[i].t === title) return BOOKS[i];
+  return null;
+}
+
+/* --------------------------------------------------------------------------
+   7. SCREEN 5 - the summary
+
+   WANT TO CHANGE WHAT GEMINI WRITES?
+   Edit the prompt inside buildPrompt() below. Everything else about the
+   request - the model, the temperature, the length cap - is in askGemini().
+   -------------------------------------------------------------------------- */
+
+function buildPrompt(book){
+  return "Write a complete plot summary of the novel \"" + book.t + "\" by " + book.a + ".\n\n" +
+    "Length: between 1000 and 1500 words.\n\n" +
+    "Cover all of the following:\n" +
+    "- the entire plot from beginning to end, including the ending itself\n" +
+    "- every major twist, and exactly where in the story each one lands\n" +
+    "- the main characters, what each of them wants, and how each of them changes\n" +
+    "- the setting, in time and place\n" +
+    "- the themes the book is working on, and the tone it takes\n\n" +
+    "How to write it:\n" +
+    "- plain prose in the past tense\n" +
+    "- no headings, no bullet points, no numbered lists, no markdown of any kind\n" +
+    "- no bold, italics, asterisks or hashes\n" +
+    "- separate paragraphs with a blank line\n" +
+    "- do not quote any text from the book; describe everything in your own words\n\n" +
+    "Accuracy matters more than completeness. If you are not confident about the " +
+    "real plot of this book, say so plainly in a sentence and describe only what you " +
+    "are sure of. Do not invent events, characters or endings.";
+}
+
+function pickBook(title){
+  var book = findBook(title);
+  if (!book) return;
+  state.book = book;
+
+  document.getElementById("summaryTitle").textContent = book.t;
+  document.getElementById("summaryMeta").textContent =
+    book.a + " · " + book.y + " · " + book.r.toFixed(2);
+
+  var body = document.getElementById("summaryBody");
+  go("summary");
+
+  /* Already written once this session? Show it and spend nothing. */
+  if (cache[book.t]){ body.innerHTML = paragraphs(cache[book.t]); return; }
+
+  var key = store.get(KEY_NAME);
+
+  /* Fallback 1: no key saved. Show the hook and point at settings. */
+  if (!key){
+    body.innerHTML =
+      '<p class="note">No Gemini key is saved, so there is no full summary yet. ' +
+      'Add a free key in settings and this page will fill itself in.</p>' +
+      '<div class="prose"><p>' + esc(book.d) + '</p></div>' +
+      '<p style="margin:18px 0 0"><button class="quiet" onclick="go(\'settings\')">Open settings</button></p>';
+    return;
+  }
+
+  body.innerHTML = '<p class="loading">Writing the summary</p>';
+
+  askGemini(buildPrompt(book), key).then(function(text){
+    cache[book.t] = text;
+    body.innerHTML = paragraphs(text);
+  }).catch(function(err){
+    /* Fallback 2: the request failed. Explain it, still show the hook. */
+    body.innerHTML =
+      '<p class="note">The summary could not be written. ' + esc(friendlyError(err)) + '</p>' +
+      '<div class="prose"><p>' + esc(book.d) + '</p></div>' +
+      '<p style="margin:18px 0 0"><button class="quiet" onclick="go(\'settings\')">Check the API key</button></p>';
+  });
+}
+
+/* Split on blank lines and escape every piece. Model output is never
+   written to the page as raw HTML. */
+function paragraphs(text){
+  var parts = String(text).split(/\n\s*\n/);
+  var html = "";
+  for (var i=0; i<parts.length; i++){
+    var p = parts[i].trim();
+    if (p) html += "<p>" + esc(p) + "</p>";
+  }
+  return '<div class="prose">' + (html || "<p>Nothing came back.</p>") + "</div>";
+}
+
+/* Turn whatever went wrong into one plain sentence. Never a stack trace. */
+function friendlyError(err){
+  var m = (err && err.message) ? err.message : String(err);
+  if (/\b401\b|\b403\b|API key/i.test(m)) return "The key was rejected - check it in settings.";
+  if (/\b429\b|quota/i.test(m))          return "Google is rate-limiting the free tier. Try again in a minute.";
+  if (/\b40[0-9]\b/.test(m))             return "Google refused the request: " + m;
+  if (/\b5[0-9][0-9]\b/.test(m))         return "Google had a server error. Try again shortly.";
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m))
+    return "No network connection reached Google.";
+  return m;
+}
+
+function askGemini(prompt, key){
+  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" +
+            encodeURIComponent(key);
+
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [ { parts: [ { text: prompt } ] } ],
+      generationConfig: { temperature: 0.4, maxOutputTokens: 3000 }
+    })
+  }).then(function(res){
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.json();
+  }).then(function(data){
+    var cand = data && data.candidates && data.candidates[0];
+    var parts = cand && cand.content && cand.content.parts;
+    if (!parts || !parts.length) throw new Error("Gemini returned no text.");
+    var out = "";
+    for (var i=0; i<parts.length; i++) if (parts[i].text) out += parts[i].text;
+    if (!out.trim()) throw new Error("Gemini returned no text.");
+    return out.trim();
+  });
+}
+
+/* --------------------------------------------------------------------------
+   8. SCREEN 6 - the key
+   -------------------------------------------------------------------------- */
+
+function showKeyState(){
+  var el = document.getElementById("keyState");
+  var key = store.get(KEY_NAME);
+  if (key){
+    el.textContent = "A key is saved in this browser, ending " + key.slice(-4) + ".";
+  } else {
+    el.textContent = "No key is saved. Summaries will show the one-line hook only.";
+  }
+}
+
+function saveKey(){
+  var box = document.getElementById("keyBox");
+  var val = box.value.trim();
+  var el  = document.getElementById("keyState");
+
+  if (!val){ el.textContent = "Nothing to save - the box is empty."; return; }
+
+  if (store.set(KEY_NAME, val)){
+    box.value = "";
+    cache = {};                      /* a new key deserves a fresh try */
+    showKeyState();
+  } else {
+    el.textContent = "This browser will not let the key be stored - private browsing blocks it.";
+  }
+}
+
+function removeKey(){
+  store.del(KEY_NAME);
+  document.getElementById("keyBox").value = "";
+  showKeyState();
+}
+
+/* --------------------------------------------------------------------------
+   9. START
+   -------------------------------------------------------------------------- */
+
+renderGenres();
+showKeyState();
+document.getElementById("searchBox").addEventListener("input", renderSearch);
+</script>
+</body>
+</html>
