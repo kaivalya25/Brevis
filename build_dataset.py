@@ -173,6 +173,37 @@ BLOCKED_LABELS = frozenset([
 ])
 
 
+# Even among real novels the dump carries things that are not one story: free
+# samplers, boxed sets, omnibus editions and split volumes. There is nothing
+# for the summariser to summarise in "Words of Radiance, Part 2".
+TITLE_JUNK = re.compile(
+    r"\b(sampler|omnibus|excerpt|preview|teaser|boxed set|box set|bundle)\b"
+    r"|\bcollection\b"
+    # Unofficial cash-ins: study guides, "-- Review", "Summary & Analysis of".
+    r"|\b(review|summary|study ?guide|analysis|companion|quiz|trivia"
+    r"|sparknotes|cliffsnotes|unofficial|key takeaways|conversation starters)\b"
+    # Tie-in merchandise rather than a story. Kept deliberately narrow: a
+    # pattern as loose as "guide to" would throw out The Hitchhiker's Guide
+    # to the Galaxy, which is very much a novel.
+    r"|\b(colou?ring book|activity book|sticker book|workbook"
+    r"|interactive adventure|choose your own)\b"
+    r"|\bpart\s+(one|two|three|four|1|2|3|4)\b"
+    r"|\bbooks?\s*\d+\s*[-–]\s*\d+\b"
+    r"|\bcomplete\b.{0,30}\b(trilogy|series|saga|novels)\b",
+    re.IGNORECASE)
+
+# An omnibus usually names its contents after a colon: "The Restoration
+# Collection: Last Light, Night Light, True Light, Dawn's Light". Two or more
+# commas after a colon is almost always that. It does occasionally catch a
+# real novel with a comma-heavy subtitle, which is a fair trade when there are
+# millions of candidates and only a few thousand places to fill.
+TITLE_LIST = re.compile(r":[^:]*,[^,]*,")
+
+
+def is_single_story(title):
+    return not TITLE_JUNK.search(title) and not TITLE_LIST.search(title)
+
+
 def is_novel(shelves):
     labels = {s.strip().lower() for s in shelves.split(",") if s.strip()}
     if not labels:
@@ -325,6 +356,8 @@ def scan(records, shortlist_size):
         if len(rec["d"]) < MIN_DESC:
             continue
         if not is_novel(rec["shelves"]):
+            continue
+        if not is_single_story(rec["t"]):
             continue
         if not looks_english(rec["d"]):
             continue
