@@ -111,6 +111,51 @@ h2{
   margin:0 0 10px;
 }
 
+/* ---------- The wordmark ----------
+   The app name, sitting above every screen the way a Squarespace site logo
+   sits above every page. Tapping it goes home. */
+.masthead{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  padding:0 0 22px;
+  margin:0 0 34px;
+  border-bottom:1px solid var(--line);
+  animation:rise .8s var(--ease) both;
+}
+.wordmark{
+  min-height:44px;
+  padding:10px 4px;
+  background:none;
+  border:0;
+  color:var(--ink);
+  font-family:var(--serif);
+  font-size:21px;
+  line-height:1;
+  letter-spacing:.36em;
+  text-indent:.36em;          /* pull the word back to true centre */
+  text-transform:uppercase;
+  cursor:pointer;
+}
+
+/* The big name on the welcome screen. */
+.hero{
+  font-family:var(--serif);
+  font-weight:400;
+  font-size:clamp(66px,23vw,124px);
+  line-height:.92;
+  letter-spacing:-.035em;
+  margin:0 0 14px;
+}
+.tagline{
+  font-family:var(--serif);
+  font-size:clamp(23px,6.5vw,30px);
+  line-height:1.2;
+  letter-spacing:-.01em;
+  color:var(--ink);
+  margin:0 0 24px;
+}
+
 /* The small uppercase label Squarespace puts above headings. */
 .eyebrow{
   font-size:11px;
@@ -282,19 +327,43 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
 .quiet:active{ color:var(--ink); }
 
 .empty{ color:var(--mute); font-size:14px; padding:4px 0; }
+
+/* Small pill toggles - used to switch the summary between short and full. */
+.chip{
+  min-height:44px;
+  padding:11px 20px;
+  background:transparent;
+  border:1px solid var(--line);
+  color:var(--mute);
+  font-family:var(--sans);
+  font-size:11px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:background .3s var(--ease), color .3s var(--ease), border-color .3s var(--ease);
+}
+.chip.on{ background:var(--ink); border-color:var(--ink); color:var(--paper); }
+
+/* The "if you liked this" strip under a summary. */
+.recs{ margin-top:44px; padding-top:30px; border-top:1px solid var(--line); }
 </style>
 </head>
 
 <body>
 <div class="wrap">
 
+<!-- The app name, on every screen. -->
+<header class="masthead">
+  <button class="wordmark" onclick="go('welcome')" aria-label="Brevis - home">Brevis</button>
+</header>
+
 <!-- =====================================================================
      SCREEN 1 - Welcome
      ===================================================================== -->
 <section class="screen on" id="welcome">
-  <p class="eyebrow">Brevis</p>
-  <h1>Read the<br>whole story.</h1>
-  <p class="lede">Pick a mood, pick an author, pick a book. Brevis lays out the entire plot - every twist, every ending - in about ten minutes of reading.</p>
+  <h1 class="hero">Brevis</h1>
+  <p class="tagline">Read the whole story.</p>
+  <p class="lede">Pick a mood, pick an author, pick a book. Brevis lays out the plot - every twist, every ending - in as long or as little as you want.</p>
   <button class="btn" onclick="go('genre')">Begin</button>
   <p style="margin:26px 0 0"><button class="quiet" onclick="go('settings')">API key settings</button></p>
 </section>
@@ -308,6 +377,13 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
   <h2>What are you in the mood for?</h2>
   <p class="sub">Choose one.</p>
   <div class="grid" id="genreGrid"><!-- filled by JS --></div>
+  <div>
+    <hr class="rule">
+    <label class="label" for="askBox">Or describe what you feel like reading</label>
+    <input class="field" id="askBox" type="search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="a quiet novel about grief in space">
+    <div class="row"><button class="btn ghost" onclick="semanticSearch()">Search</button></div>
+    <div class="stack" id="askList" style="margin-top:16px"><!-- filled by JS --></div>
+  </div>
 </section>
 
 <!-- =====================================================================
@@ -346,7 +422,12 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
   <p class="eyebrow">The whole story</p>
   <h2 id="summaryTitle">Title</h2>
   <p class="sub" id="summaryMeta">Author</p>
+  <div class="row" style="margin:0 0 30px">
+    <button class="chip on" id="chipShort" onclick="setLength('short')">Short</button>
+    <button class="chip" id="chipFull" onclick="setLength('full')">Full plot</button>
+  </div>
   <div id="summaryBody"><!-- filled by JS --></div>
+  <div id="recs"><!-- filled by JS --></div>
   <div class="row">
     <button class="btn ghost" onclick="go('books')">Other books</button>
     <button class="btn ghost" onclick="go('welcome')">Start over</button>
@@ -396,7 +477,7 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
        ranking for that mood stops meaning much.
    -------------------------------------------------------------------------- */
 
-const BOOKS = [
+var BOOKS = [
 
   /* --- J.R.R. Tolkien --- */
   { t:"The Hobbit", a:"J.R.R. Tolkien", r:4.28, y:1937, g:["fantasy","classic"], d:"A comfortable hobbit is bullied out of his door and into a dragon's mountain." },
@@ -621,6 +702,50 @@ const GENRES = [
 ];
 
 /* --------------------------------------------------------------------------
+   2b. THE BIGGER LIST
+
+   The list above is the seed: it is built into this file so the app works
+   from a file:// URL with nothing else present. When build_dataset.py has
+   been run and books.json is sitting next to this file, that is loaded
+   instead - a few thousand books chosen out of millions, each one carrying
+   two extra fields the seed does not have:
+
+       x = a snippet of the real blurb, used to ground the AI summary
+       s = the positions of similar books, used for recommendations
+
+   vectors.json, if present, holds one small vector per book so the search
+   box on the mood screen can find books by meaning rather than by name.
+   -------------------------------------------------------------------------- */
+
+var VECTORS = null;     /* {dims, scale, data:[[int8,...]]} once loaded */
+var USING_FULL = false; /* true once books.json has replaced the seed */
+
+function indexBooks(){
+  for (var i=0; i<BOOKS.length; i++) BOOKS[i]._i = i;
+}
+
+function loadData(){
+  /* fetch() cannot read a neighbouring file from file://, and that is fine -
+     the seed list above is already loaded. Any failure here is silent. */
+  try {
+    fetch("books.json").then(function(r){
+      return r.ok ? r.json() : null;
+    }).then(function(rows){
+      if (!rows || !rows.length) return;
+      BOOKS = rows;
+      USING_FULL = true;
+      indexBooks();
+      renderGenres();
+      return fetch("vectors.json");
+    }).then(function(r){
+      return (r && r.ok) ? r.json() : null;
+    }).then(function(v){
+      if (v && v.data && v.data.length === BOOKS.length) VECTORS = v;
+    }).catch(function(){ /* stay on the seed list */ });
+  } catch(e){ /* stay on the seed list */ }
+}
+
+/* --------------------------------------------------------------------------
    3. SMALL HELPERS
    -------------------------------------------------------------------------- */
 
@@ -657,9 +782,10 @@ var store = {
 var KEY_NAME = "brevis_gemini_key";
 
 /* What the user has chosen so far. */
-var state = { genre:null, genreLabel:"", author:null, book:null };
+var state = { genre:null, genreLabel:"", author:null, book:null, length:"short" };
 
-/* Summaries already written, keyed by title, so reopening a book is free. */
+/* Summaries already written, keyed by book and length, so reopening one
+   costs nothing. */
 var cache = {};
 
 /* --------------------------------------------------------------------------
@@ -825,24 +951,26 @@ function pickAuthor(name){
   document.getElementById("booksTitle").textContent = name;
 
   var list = booksFor(name, state.genre);
-  var html = "";
-  for (var i=0; i<list.length; i++){
-    var b = list[i];
-    html += '<button class="card" onclick="pickBook(' + jsArg(b.t) + ')">' +
-              '<span class="name">' + esc(b.t) + '</span>' +
-              '<span class="meta">' + b.r.toFixed(2) + ' &middot; ' + b.y + '</span>' +
-              '<span class="hook">' + esc(b.d) + '</span>' +
-            '</button>';
-  }
-  if (!html) html = '<p class="empty">No books listed for this author.</p>';
-  document.getElementById("bookList").innerHTML = html;
+  document.getElementById("bookList").innerHTML =
+    bookCards(list) || '<p class="empty">No books listed for this author.</p>';
 
   go("books");
 }
 
-function findBook(title){
-  for (var i=0; i<BOOKS.length; i++) if (BOOKS[i].t === title) return BOOKS[i];
-  return null;
+/* One book card, used by the book list, the search results and the
+   recommendations under a summary. */
+function bookCards(list){
+  var html = "";
+  for (var i=0; i<list.length; i++){
+    var b = list[i];
+    html += '<button class="card" onclick="pickBook(' + b._i + ')">' +
+              '<span class="name">' + esc(b.t) + '</span>' +
+              '<span class="meta">' + esc(b.a) + ' &middot; ' +
+                 b.r.toFixed(2) + (b.y ? ' &middot; ' + b.y : '') + '</span>' +
+              '<span class="hook">' + esc(b.d) + '</span>' +
+            '</button>';
+  }
+  return html;
 }
 
 /* --------------------------------------------------------------------------
@@ -853,63 +981,150 @@ function findBook(title){
    request - the model, the temperature, the length cap - is in askGemini().
    -------------------------------------------------------------------------- */
 
-function buildPrompt(book){
-  return "Write a complete plot summary of the novel \"" + book.t + "\" by " + book.a + ".\n\n" +
-    "Length: between 1000 and 1500 words.\n\n" +
-    "Cover all of the following:\n" +
-    "- the entire plot from beginning to end, including the ending itself\n" +
-    "- every major twist, and exactly where in the story each one lands\n" +
-    "- the main characters, what each of them wants, and how each of them changes\n" +
-    "- the setting, in time and place\n" +
-    "- the themes the book is working on, and the tone it takes\n\n" +
+/* The retrieval step. Before asking for a summary, gather what is actually
+   known about this book from the local dataset: its own blurb, and the books
+   the vector index put closest to it. That context goes into the prompt, so
+   the model is working from real material rather than memory alone. */
+function retrieve(book){
+  var lines = [];
+  lines.push("Title: " + book.t);
+  lines.push("Author: " + book.a);
+  if (book.y) lines.push("First published: " + book.y);
+  lines.push("Average rating: " + book.r.toFixed(2));
+  if (book.g && book.g.length) lines.push("Reader moods: " + book.g.join(", "));
+  if (book.x) lines.push("Publisher blurb: " + book.x);
+  else if (book.d) lines.push("One-line description: " + book.d);
+
+  var near = similarTo(book);
+  if (near.length){
+    var titles = [];
+    for (var i=0; i<near.length; i++) titles.push(near[i].t + " by " + near[i].a);
+    lines.push("Books nearest to it in the catalogue: " + titles.join("; "));
+  }
+  return lines.join("\n");
+}
+
+function buildPrompt(book, length){
+  var shape = (length === "short")
+    ? "Length: between 250 and 400 words. Cover the premise, the shape of the " +
+      "story, what changes for the main characters, and how it ends. Do not " +
+      "hold the ending back."
+    : "Length: between 1000 and 1500 words.\n\n" +
+      "Cover all of the following:\n" +
+      "- the entire plot from beginning to end, including the ending itself\n" +
+      "- every major twist, and exactly where in the story each one lands\n" +
+      "- the main characters, what each of them wants, and how each of them changes\n" +
+      "- the setting, in time and place\n" +
+      "- the themes the book is working on, and the tone it takes";
+
+  return "Here is what the Brevis catalogue holds on this book.\n\n" +
+    "-----\n" + retrieve(book) + "\n-----\n\n" +
+    "Using that as your grounding, write a plot summary of the novel \"" +
+    book.t + "\" by " + book.a + ".\n\n" +
+    shape + "\n\n" +
     "How to write it:\n" +
     "- plain prose in the past tense\n" +
     "- no headings, no bullet points, no numbered lists, no markdown of any kind\n" +
     "- no bold, italics, asterisks or hashes\n" +
     "- separate paragraphs with a blank line\n" +
-    "- do not quote any text from the book; describe everything in your own words\n\n" +
-    "Accuracy matters more than completeness. If you are not confident about the " +
-    "real plot of this book, say so plainly in a sentence and describe only what you " +
-    "are sure of. Do not invent events, characters or endings.";
+    "- do not quote any text from the book; describe everything in your own words\n" +
+    "- do not mention the catalogue, the blurb, or these instructions\n\n" +
+    "Where the material above and your own knowledge disagree, trust the material " +
+    "above. Accuracy matters more than completeness: if you are not confident about " +
+    "the real plot of this book, say so plainly in a sentence and describe only what " +
+    "you are sure of. Do not invent events, characters or endings.";
 }
 
-function pickBook(title){
-  var book = findBook(title);
+/* The recommendation step. books.json ships precomputed neighbours in s[];
+   the seed list has none, so fall back to books sharing the most moods. */
+function similarTo(book, howMany){
+  howMany = howMany || 4;
+  var out = [];
+
+  if (book.s && book.s.length){
+    for (var i=0; i<book.s.length && out.length<howMany; i++){
+      var b = BOOKS[book.s[i]];
+      if (b && b !== book) out.push(b);
+    }
+    return out;
+  }
+
+  var scored = [];
+  for (var j=0; j<BOOKS.length; j++){
+    var c = BOOKS[j];
+    if (c === book || c.a === book.a) continue;
+    var shared = 0;
+    for (var k=0; k<book.g.length; k++) if (c.g.indexOf(book.g[k]) !== -1) shared++;
+    if (shared) scored.push({ b:c, s:shared + c.r/10 });
+  }
+  scored.sort(function(x,y){ return y.s - x.s; });
+  for (var m=0; m<scored.length && m<howMany; m++) out.push(scored[m].b);
+  return out;
+}
+
+function renderRecs(book){
+  var near = similarTo(book);
+  var el = document.getElementById("recs");
+  if (!near.length){ el.innerHTML = ""; return; }
+  el.innerHTML = '<div class="recs"><p class="eyebrow">If you liked this</p>' +
+                 '<div class="stack">' + bookCards(near) + '</div></div>';
+}
+
+function pickBook(index){
+  var book = BOOKS[index];
   if (!book) return;
   state.book = book;
 
   document.getElementById("summaryTitle").textContent = book.t;
   document.getElementById("summaryMeta").textContent =
-    book.a + " · " + book.y + " · " + book.r.toFixed(2);
+    book.a + (book.y ? " · " + book.y : "") + " · " + book.r.toFixed(2);
 
-  var body = document.getElementById("summaryBody");
   go("summary");
+  renderSummary();
+  renderRecs(book);
+}
 
-  /* Already written once this session? Show it and spend nothing. */
-  if (cache[book.t]){ body.innerHTML = paragraphs(cache[book.t]); return; }
+/* Short or full. Each length is fetched and cached separately. */
+function setLength(kind){
+  if (state.length === kind) return;
+  state.length = kind;
+  document.getElementById("chipShort").classList.toggle("on", kind === "short");
+  document.getElementById("chipFull").classList.toggle("on", kind === "full");
+  if (state.book) renderSummary();
+}
+
+function renderSummary(){
+  var book = state.book;
+  var body = document.getElementById("summaryBody");
+  var slot = book._i + "|" + state.length;
+
+  if (cache[slot]){ body.innerHTML = paragraphs(cache[slot]); return; }
 
   var key = store.get(KEY_NAME);
 
   /* Fallback 1: no key saved. Show the hook and point at settings. */
   if (!key){
     body.innerHTML =
-      '<p class="note">No Gemini key is saved, so there is no full summary yet. ' +
+      '<p class="note">No Gemini key is saved, so there is no written summary yet. ' +
       'Add a free key in settings and this page will fill itself in.</p>' +
-      '<div class="prose"><p>' + esc(book.d) + '</p></div>' +
+      '<div class="prose"><p>' + esc(book.x || book.d) + '</p></div>' +
       '<p style="margin:18px 0 0"><button class="quiet" onclick="go(\'settings\')">Open settings</button></p>';
     return;
   }
 
   body.innerHTML = '<p class="loading">Writing the summary</p>';
+  var want = state.length;
 
-  askGemini(buildPrompt(book), key).then(function(text){
-    cache[book.t] = text;
-    body.innerHTML = paragraphs(text);
+  askGemini(buildPrompt(book, want), key).then(function(text){
+    cache[slot] = text;
+    /* The reader may have switched length while this was in flight. */
+    if (state.book === book && state.length === want) body.innerHTML = paragraphs(text);
   }).catch(function(err){
-    /* Fallback 2: the request failed. Explain it, still show the hook. */
+    /* Fallback 2: the request failed. Explain it, still show the blurb. */
+    if (state.book !== book || state.length !== want) return;
     body.innerHTML =
       '<p class="note">The summary could not be written. ' + esc(friendlyError(err)) + '</p>' +
-      '<div class="prose"><p>' + esc(book.d) + '</p></div>' +
+      '<div class="prose"><p>' + esc(book.x || book.d) + '</p></div>' +
       '<p style="margin:18px 0 0"><button class="quiet" onclick="go(\'settings\')">Check the API key</button></p>';
   });
 }
@@ -1000,12 +1215,103 @@ function removeKey(){
 }
 
 /* --------------------------------------------------------------------------
-   9. START
+   9. SEARCH BY MEANING
+
+   The other search box, on the mood screen. Instead of matching letters it
+   compares meanings: the phrase the reader typed is turned into a vector by
+   Gemini, and compared against the vector of every book in vectors.json.
+   Those were made by the same model at the same size, so the two live in the
+   same space and a plain dot product ranks them.
+
+   This needs both an API key and vectors.json. Without either, it says so.
    -------------------------------------------------------------------------- */
 
+function embedQuery(text, key){
+  var url = "https://generativelanguage.googleapis.com/v1beta/" +
+            VECTORS.model + ":embedContent?key=" + encodeURIComponent(key);
+
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: VECTORS.model,
+      content: { parts: [ { text: text } ] },
+      taskType: "RETRIEVAL_QUERY",
+      outputDimensionality: VECTORS.dims
+    })
+  }).then(function(res){
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.json();
+  }).then(function(data){
+    var v = data && data.embedding && data.embedding.values;
+    if (!v || !v.length) throw new Error("No vector came back.");
+    return v;
+  });
+}
+
+function nearestBooks(query, howMany){
+  /* Both sides are unit length, so the dot product is the cosine. */
+  var norm = 0;
+  for (var i=0; i<query.length; i++) norm += query[i]*query[i];
+  norm = Math.sqrt(norm) || 1;
+
+  var rows = VECTORS.data, scored = [];
+  for (var r=0; r<rows.length; r++){
+    var row = rows[r], dot = 0;
+    for (var c=0; c<row.length; c++) dot += row[c] * query[c];
+    scored.push({ i:r, s:dot / norm });
+  }
+  scored.sort(function(a,b){ return b.s - a.s; });
+
+  var out = [];
+  for (var k=0; k<scored.length && out.length<howMany; k++){
+    var b = BOOKS[scored[k].i];
+    if (b) out.push(b);
+  }
+  return out;
+}
+
+function semanticSearch(){
+  var q = document.getElementById("askBox").value.trim();
+  var out = document.getElementById("askList");
+
+  if (q.length < 3){ out.innerHTML = '<p class="empty">Type a little more.</p>'; return; }
+
+  if (!VECTORS){
+    out.innerHTML = '<p class="note">Search by meaning needs vectors.json, which ' +
+      'build_dataset.py writes. Until then, pick a mood above or search by author ' +
+      'on the next screen.</p>';
+    return;
+  }
+
+  var key = store.get(KEY_NAME);
+  if (!key){
+    out.innerHTML = '<p class="note">Search by meaning needs a Gemini key to read ' +
+      'your phrase. Add one in settings.</p>';
+    return;
+  }
+
+  out.innerHTML = '<p class="loading">Looking</p>';
+  embedQuery(q, key).then(function(vec){
+    var hits = nearestBooks(vec, 6);
+    out.innerHTML = bookCards(hits) || '<p class="empty">Nothing close enough.</p>';
+  }).catch(function(err){
+    out.innerHTML = '<p class="note">Could not search: ' + esc(friendlyError(err)) + '</p>';
+  });
+}
+
+/* --------------------------------------------------------------------------
+   10. START
+   -------------------------------------------------------------------------- */
+
+indexBooks();
 renderGenres();
 showKeyState();
+loadData();
 document.getElementById("searchBox").addEventListener("input", renderSearch);
+document.getElementById("askBox").addEventListener("keydown", function(e){
+  if (e.key === "Enter"){ e.preventDefault(); semanticSearch(); }
+});
 </script>
 </body>
 </html>

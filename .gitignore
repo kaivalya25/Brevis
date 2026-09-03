@@ -1,4 +1,7 @@
 *.gz
-books.json
 .env
 __pycache__/
+
+# built dataset - regenerate with build_dataset.py if you prefer not to commit it
+# books.json
+# vectors.json
