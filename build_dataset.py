@@ -17,7 +17,7 @@ TWO SOURCES, PICK ONE
 
     --source hf       (default)  No download. Streams the parquet copy of a
                                  3.9-million-row Goodreads dataset straight off
-                                 Hugging Face over HTTPS, pulling only the six
+                                 Hugging Face over HTTPS, pulling only the seven
                                  columns we actually use and throwing each batch
                                  away after scoring it. Nothing is kept on disk.
 
@@ -130,10 +130,62 @@ def first_author(value):
     return names[0] if names else clean(value)
 
 
+# This dataset has no language column, and it is full of translated editions -
+# the German and Italian Game of Thrones sit right beside the English one. An
+# app that writes English summaries should not offer them, so blurbs are
+# checked for the small words English cannot write a paragraph without. Real
+# English prose is roughly a fifth of these; other languages score near zero.
+ENGLISH_HINTS = frozenset("""
+a an the and or but of to in on at for with from by as is was are were be been
+that this these those it its he she his her they them their you your not no
+who what when where which while has have had will would can could about into
+""".split())
+
+WORD_RE = re.compile(r"[a-zA-Z']+")
+
+
+def looks_english(text):
+    words = [w.lower() for w in WORD_RE.findall(text)]
+    if len(words) < 30:
+        return False
+    hits = sum(1 for w in words if w in ENGLISH_HINTS)
+    return (hits / len(words)) >= 0.18
+
+
+# Brevis summarises plots, so it wants novels. Left alone, the ranking fills up
+# with Bibles, cookbooks and art-history monographs, because those are popular
+# and well rated. The genres column is well populated, so use it: a book has to
+# claim at least one fiction label, must not also claim to be nonfiction, and
+# must not be a form that has no single plot to tell.
+FICTION_LABELS = frozenset([
+    "fiction", "fantasy", "science fiction", "mystery", "romance", "thriller",
+    "historical fiction", "horror", "contemporary", "literary fiction", "crime",
+    "adventure", "young adult", "classics", "dystopia", "paranormal", "suspense",
+    "magical realism", "urban fantasy", "epic fantasy", "novels", "chick lit",
+    "contemporary romance", "womens fiction", "gothic",
+])
+
+BLOCKED_LABELS = frozenset([
+    "nonfiction", "non fiction", "reference", "textbooks", "picture books",
+    "comics", "graphic novels", "manga", "poetry", "short stories",
+    "anthologies", "essays", "self help", "cookbooks", "religion",
+    "music", "art", "biography", "memoir", "travel", "sports",
+])
+
+
+def is_novel(shelves):
+    labels = {s.strip().lower() for s in shelves.split(",") if s.strip()}
+    if not labels:
+        return False
+    if labels & BLOCKED_LABELS:
+        return False
+    return bool(labels & FICTION_LABELS)
+
+
 def read_hf(scan_limit):
     """Stream the parquet copy off Hugging Face. Nothing touches the disk.
 
-    Parquet is columnar, so asking for six columns means only those columns
+    Parquet is columnar, so asking for seven columns means only those columns
     cross the network - a fraction of the full dataset - and each batch is
     discarded as soon as it has been scored.
     """
@@ -272,6 +324,10 @@ def scan(records, shortlist_size):
             continue
         if len(rec["d"]) < MIN_DESC:
             continue
+        if not is_novel(rec["shelves"]):
+            continue
+        if not looks_english(rec["d"]):
+            continue
 
         usable += 1
         s = score_book(rec["r"], rec["n"], mean_rating)
@@ -335,6 +391,53 @@ def tag_moods(col, books, per_mood):
         print("    %-13s %d books" % (tag, per_mood))
 
 
+def top_up_authors(col, books, min_per_author):
+    """Rescue authors the mood queries left stranded.
+
+    A mood query returns the best few hundred books for that mood, and those
+    are scattered across thousands of authors. An author can easily come back
+    with one tagged book while three more of theirs sit in the shortlist
+    untagged - and an author with one book is a dead end in the app, so they
+    would be dropped entirely.
+
+    So: for any author who is close to qualifying, take their untagged books
+    and give each one the single mood it sits nearest to. Same vectors, same
+    mood sentences, just asked the other way round - which mood is closest to
+    this book, rather than which books are closest to this mood.
+    """
+    import numpy as np
+    from chromadb.utils import embedding_functions
+
+    by_author = {}
+    for b in books:
+        by_author.setdefault(b["a"], []).append(b)
+
+    need = []
+    for group in by_author.values():
+        tagged = [b for b in group if b.get("g")]
+        if tagged and len(group) >= min_per_author and len(tagged) < min_per_author:
+            need.extend([b for b in group if not b.get("g")])
+
+    if not need:
+        print("  no authors needed topping up.")
+        return
+
+    mood_tags = list(MOODS.keys())
+    ef = embedding_functions.DefaultEmbeddingFunction()
+    mvec = np.array(ef(list(MOODS.values())), dtype="float32")
+    mvec /= (np.linalg.norm(mvec, axis=1, keepdims=True) + 1e-9)
+
+    got = col.get(ids=[str(b["_row"]) for b in need], include=["embeddings"])
+    order = {int(i): p for p, i in enumerate(got["ids"])}
+    vecs = np.array(got["embeddings"], dtype="float32")
+    vecs /= (np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-9)
+
+    for b in need:
+        b["g"] = [mood_tags[int(np.argmax(mvec @ vecs[order[b["_row"]]]))]]
+
+    print("  topped up %d books so their authors stay reachable." % len(need))
+
+
 # ---------------------------------------------------------------------------
 # STAGE 4 - CHOOSING WHAT SHIPS
 #
@@ -343,7 +446,7 @@ def tag_moods(col, books, per_mood):
 # at least three books, or tapping that author leads to a dead end.
 # ---------------------------------------------------------------------------
 
-def choose(books, export_max, min_per_author):
+def choose(books, export_max, min_per_author, max_per_author):
     tagged = [b for b in books if b.get("g")]
     print("  %d books picked up at least one mood." % len(tagged))
 
@@ -371,11 +474,14 @@ def choose(books, export_max, min_per_author):
     )
     print("  %d authors have %d or more books." % (len(ranked), min_per_author))
 
+    # The app never shows more than five books by one author, so letting a
+    # prolific series writer take twenty slots just crowds other authors out.
     out = []
     for group in ranked:
-        if len(out) + len(group) > export_max:
+        best = sorted(group, key=lambda b: -b["score"])[:max_per_author]
+        if len(out) + len(best) > export_max:
             continue
-        out.extend(sorted(group, key=lambda b: -b["score"]))
+        out.extend(best)
     print("  exporting %d books by %d authors."
           % (len(out), len({b["a"] for b in out})))
     return out
@@ -485,6 +591,8 @@ def main():
                     help="books pulled out of the index per mood")
     ap.add_argument("--min-per-author", type=int, default=3,
                     help="authors with fewer books than this are dropped")
+    ap.add_argument("--max-per-author", type=int, default=6,
+                    help="how many books one author may contribute")
     ap.add_argument("--no-vectors", action="store_true",
                     help="skip the Gemini stage even if a key is set")
     ap.add_argument("--out", default="books.json")
@@ -512,9 +620,10 @@ def main():
 
     print("\n[3/5] Retrieval by mood ...")
     tag_moods(col, books, args.per_mood)
+    top_up_authors(col, books, args.min_per_author)
 
     print("\n[4/5] Choosing what ships ...")
-    chosen = choose(books, args.export, args.min_per_author)
+    chosen = choose(books, args.export, args.min_per_author, args.max_per_author)
     if not chosen:
         sys.exit("Nothing to export. Try a bigger --shortlist or --per-mood.")
     add_neighbours(col, chosen)
@@ -530,6 +639,7 @@ def main():
             "g": b["g"],
             "d": first_sentence(b["d"]),
             "x": b["d"][:700],      # the retrieval snippet the summary is grounded in
+            "k": b["shelves"],      # reader shelf labels, more grounding
             "s": b["s"],            # indices of similar books, for recommendations
         })
 

@@ -106,7 +106,25 @@ automatically.
 **No 2 GB download.** By default the script streams a 3.9-million-row Goodreads
 dataset off Hugging Face over HTTPS. Parquet is columnar, so only the seven
 columns it actually reads cross the network, and each batch is discarded after
-scoring. Nothing is written to disk except the final `books.json`.
+scoring. Nothing is written to disk except the final `books.json`. Streaming
+runs at roughly 5,000 rows a second, so a full pass is around fifteen minutes.
+
+Three filters do most of the work of making the result usable:
+
+- **Enough signal** — a real blurb, a rating, and at least 25 votes.
+- **English** — this dataset has no language column and is full of translated
+  editions, so blurbs are scored on how many English function words they
+  contain. Real English prose is about a fifth; other languages score near zero.
+- **Actually a novel** — a book must claim a fiction label and must not claim
+  to be nonfiction. Without this the ranking fills with Bibles, cookbooks and
+  art-history monographs, which are popular and well rated but have no plot.
+
+There is also a repair step after the mood tagging. Mood queries return the best
+few hundred books for each mood, scattered across thousands of authors, which
+strands authors on one or two books — and an author with fewer than three books
+is a dead end in the app. So any author close to qualifying has their remaining
+shortlisted books tagged with whichever mood they sit nearest to. On a trial run
+this took the export from 35 books by 11 authors to 331 by 85.
 
 Useful flags:
 
@@ -122,8 +140,10 @@ A `GOOGLE_API_KEY` is needed only for the last stage, which embeds the exported
 books so the browser can search them by meaning. Everything before it runs
 offline and free.
 
-Rough costs of a full run: a few hours of CPU for the local embeddings, and
-around thirty Gemini API calls — comfortably inside the free tier.
+Rough costs of a full run: about fifteen minutes of streaming, twenty minutes
+of CPU to embed a 60,000-book shortlist locally, and around thirty Gemini API
+calls — comfortably inside the free tier. `books.json` lands at roughly 850
+bytes per book, so a 3,000-book export is about 2.5 MB.
 
 ---
 

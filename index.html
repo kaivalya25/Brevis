@@ -992,6 +992,7 @@ function retrieve(book){
   if (book.y) lines.push("First published: " + book.y);
   lines.push("Average rating: " + book.r.toFixed(2));
   if (book.g && book.g.length) lines.push("Reader moods: " + book.g.join(", "));
+  if (book.k) lines.push("Reader shelves: " + book.k);
   if (book.x) lines.push("Publisher blurb: " + book.x);
   else if (book.d) lines.push("One-line description: " + book.d);
 
