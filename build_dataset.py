@@ -96,6 +96,30 @@ MOODS = {
 YEAR_RE = re.compile(r"(1[0-9]{3}|20[0-9]{2})")
 
 
+def load_env(path=".env"):
+    """Read KEY=value lines out of a .env file into the environment.
+
+    Only build_dataset.py uses this. The app itself cannot: it runs in a
+    browser with no server behind it, so any file it could read, a visitor
+    could read too. That is why the app asks each reader for their own key
+    and keeps it in their browser instead.
+
+    A real environment variable always wins over the file.
+    """
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, value = line.split("=", 1)
+            name = name.strip()
+            value = value.strip().strip('"').strip("'")
+            if name and name not in os.environ:
+                os.environ[name] = value
+
+
 def parse_year(value):
     """Years arrive as ints, as '1991', and as 'First published May 3, 1991'."""
     if value is None:
@@ -187,6 +211,12 @@ TITLE_JUNK = re.compile(
     # to the Galaxy, which is very much a novel.
     r"|\b(colou?ring book|activity book|sticker book|workbook"
     r"|interactive adventure|choose your own)\b"
+    # "Skulduggery Pleasant #1-9", "The All Souls Trilogy"
+    r"|#\s*\d+\s*[-–—]\s*\d+"
+    r"|\b(trilogy|quartet|quintet|duology|tetralogy)\b"
+    # "The New Annotated Sherlock Holmes: The Complete Short Stories"
+    r"|\bannotated\b"
+    r"|\bcomplete\b.{0,20}\b(short stories|stories|works|tales)\b"
     r"|\bpart\s+(one|two|three|four|1|2|3|4)\b"
     r"|\bbooks?\s*\d+\s*[-–]\s*\d+\b"
     r"|\bcomplete\b.{0,30}\b(trilogy|series|saga|novels)\b",
@@ -200,8 +230,24 @@ TITLE_JUNK = re.compile(
 TITLE_LIST = re.compile(r":[^:]*,[^,]*,")
 
 
-def is_single_story(title):
-    return not TITLE_JUNK.search(title) and not TITLE_LIST.search(title)
+# Some bundles have a perfectly innocent title - "The Giver Quartet", "The
+# Books of the South" - and only give themselves away in the blurb, which
+# cheerfully says "all three novels" or "books 1-9 in one volume".
+BUNDLE_BLURB = re.compile(
+    r"\bbooks?\s*\d+\s*[-–—]\s*\d+\b"
+    r"|\b(omnibus|boxed set|box set)\b"
+    r"|\ball (two|three|four|five|six|seven|eight|nine|ten) (books|novels)\b"
+    r"|\bcomplete series\b"
+    r"|\bin one volume\b"
+    # Bundles love to list their contents: "Includes: A / B / C"
+    r"|\bincludes:\s*[^/]{3,60}/[^/]{3,60}/",
+    re.IGNORECASE)
+
+
+def is_single_story(title, description=""):
+    if TITLE_JUNK.search(title) or TITLE_LIST.search(title):
+        return False
+    return not BUNDLE_BLURB.search(description)
 
 
 def is_novel(shelves):
@@ -357,7 +403,7 @@ def scan(records, shortlist_size):
             continue
         if not is_novel(rec["shelves"]):
             continue
-        if not is_single_story(rec["t"]):
+        if not is_single_story(rec["t"], rec["d"]):
             continue
         if not looks_english(rec["d"]):
             continue
@@ -631,6 +677,8 @@ def main():
     ap.add_argument("--out", default="books.json")
     ap.add_argument("--vectors-out", default="vectors.json")
     args = ap.parse_args()
+
+    load_env()
 
     print("=" * 66)
     print("BREVIS DATASET BUILD")

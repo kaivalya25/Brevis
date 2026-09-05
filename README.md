@@ -60,18 +60,29 @@ compared against one stored vector per book. Same model, same size, same space,
 so a dot product ranks them. The vectors are quantised to a byte each, which is
 why the whole index is a few hundred kilobytes rather than several megabytes.
 
-### 3. The summary
+### 3. Three depths, and AI that stays asleep
 
-Gemini writes it, grounded in the retrieved context, in one of two lengths:
+Every book opens at the shallowest depth and goes deeper only if you ask:
 
-- **Short** — 250–400 words. Premise, arc, ending.
+- **Hook** — the blurb, the year, the rating, the moods, the shelves, and the
+  two books it sits nearest. Built entirely from the local dataset. **No API
+  call, no key, no wait.**
+- **Short** — 250–400 words. Premise, arc, ending. Written by Gemini, on tap.
 - **Full plot** — 1000–1500 words. Every twist and where it lands, every
-  character's motivation, the setting, the themes.
+  character's motivation, the setting, the themes. On tap.
 
-Both are cached per book, so switching back and forth is free. The prompt asks
-for plain past-tense prose with no markdown, no quotation from the book, and an
-honest admission rather than invention when the model is not sure of the real
-plot.
+Nothing is fetched until you tap for it. You can browse the entire catalogue —
+every mood, every author, every book — and Gemini is never called once. Each
+depth is cached per book, so moving between them is free after the first time.
+
+The one place Gemini acts on its own initiative is when you name a book or an
+author the catalogue does not have. Search for something missing and Brevis
+offers to look it up; the same three depths then apply, written from scratch.
+That offer is always a tap, never automatic.
+
+The prompts ask for plain past-tense prose with no markdown, no quotation from
+the book, and an honest admission rather than invention when the model is not
+sure of the real plot.
 
 ---
 
@@ -85,8 +96,21 @@ plot.
 
 On an iPhone, Share → **Add to Home Screen** and it opens like an app.
 
-Without a key everything still works; you get each book's blurb instead of a
-written summary.
+Without a key the catalogue still works completely — every mood, every author,
+and every book's hook. Only the written summaries and out-of-catalogue lookups
+need one.
+
+### Two different keys, two different places
+
+This trips people up, so plainly:
+
+|  | Where the key lives | Why |
+|---|---|---|
+| **`build_dataset.py`** | `.env` on your laptop | It runs on your machine. `.env` is gitignored. |
+| **The app** | Typed in by each reader, kept in their browser | There is no server. Any file the page can read, a visitor can read. A key baked into a static site is a public key. |
+
+So `.env` is for building the dataset. It cannot secure the app, and the app
+never reads it.
 
 ---
 
@@ -138,7 +162,15 @@ Useful flags:
 
 A `GOOGLE_API_KEY` is needed only for the last stage, which embeds the exported
 books so the browser can search them by meaning. Everything before it runs
-offline and free.
+offline and free. Put the key in a `.env` file beside the script:
+
+```bash
+cp .env.example .env
+```
+
+then edit `.env` so it reads `GOOGLE_API_KEY=your-real-key`. The script loads it
+automatically. `.env` is gitignored — check with `git status` before committing
+that it does not appear.
 
 Rough costs of a full run: about fifteen minutes of streaming, twenty minutes
 of CPU to embed a 60,000-book shortlist locally, and around thirty Gemini API
