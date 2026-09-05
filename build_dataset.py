@@ -28,7 +28,7 @@ TWO SOURCES, PICK ONE
 
 RUNNING IT
 
-    pip install chromadb pyarrow fsspec huggingface_hub numpy
+    pip install chromadb pyarrow fsspec numpy requests aiohttp
     python build_dataset.py                      # scan everything
     python build_dataset.py --scan-limit 100000  # a quick trial first
     python build_dataset.py --no-vectors         # skip the Gemini stage
@@ -46,6 +46,8 @@ import os
 import re
 import sys
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 
 # ---------------------------------------------------------------------------
@@ -62,9 +64,9 @@ MIN_DESC = 200          # a blurb shorter than this cannot be embedded usefully
 MIN_VOTES = 25          # a book with a handful of ratings tells us nothing
 PRIOR_VOTES = 2500      # "m" in the weighted rating below - see score_book()
 
-EMBED_MODEL = "models/text-embedding-004"   # used only in the last stage
+EMBED_MODEL = "models/gemini-embedding-001"  # used only in the last stage
 EMBED_DIMS = 128        # the browser downloads one vector per book, so keep it small
-GEMINI_BATCH = 100
+GEMINI_BATCH = 50
 GEMINI_PAUSE = 0.6      # seconds between calls, to stay inside the free tier
 
 CHROMA_BATCH = 5000     # Chroma refuses much larger single adds
@@ -227,7 +229,7 @@ TITLE_JUNK = re.compile(
 # commas after a colon is almost always that. It does occasionally catch a
 # real novel with a comma-heavy subtitle, which is a fair trade when there are
 # millions of candidates and only a few thousand places to fill.
-TITLE_LIST = re.compile(r":[^:]*,[^,]*,")
+TITLE_LIST = re.compile(r":[^:]*,[^,]*,|:[^:]*/[^/]*/")
 
 
 # Some bundles have a perfectly innocent title - "The Giver Quartet", "The
@@ -611,28 +613,47 @@ def build_vectors(chosen, out_path):
               "Search will fall back to matching on names.")
         return False
 
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        print("google-generativeai is not installed - skipping browser vectors.")
-        return False
+    # Called over plain HTTPS rather than through an SDK. The google-generativeai
+    # package is deprecated, and doing it this way means the build and the
+    # browser hit the same endpoint with the same model and the same number of
+    # dimensions - which is the whole point, since their vectors have to live in
+    # the same space to be comparable.
+    url = ("https://generativelanguage.googleapis.com/v1beta/" + EMBED_MODEL +
+           ":batchEmbedContents?key=" + urllib.parse.quote(key, safe=""))
 
-    genai.configure(api_key=key)
-    texts = ["%s by %s. %s" % (b["t"], b["a"], b["d"][:600]) for b in chosen]
+    # "x" is the blurb on an already-exported book, "d" the full one mid-build.
+    texts = ["%s by %s. %s" % (b["t"], b["a"], (b.get("x") or b.get("d", ""))[:600])
+             for b in chosen]
 
-    print("Embedding %d books with Gemini for in-browser search ..." % len(texts))
+    print("Embedding %d books with %s ..." % (len(texts), EMBED_MODEL))
     vectors = []
     for i in range(0, len(texts), GEMINI_BATCH):
         chunk = texts[i:i + GEMINI_BATCH]
-        res = genai.embed_content(
-            model=EMBED_MODEL,
-            content=chunk,
-            task_type="retrieval_document",
-            output_dimensionality=EMBED_DIMS,
-        )
-        vectors.extend(res["embedding"])
+        body = json.dumps({"requests": [{
+            "model": EMBED_MODEL,
+            "content": {"parts": [{"text": t}]},
+            "taskType": "RETRIEVAL_DOCUMENT",
+            "outputDimensionality": EMBED_DIMS,
+        } for t in chunk]}).encode("utf-8")
+
+        req = urllib.request.Request(url, data=body,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.load(resp)
+        except urllib.error.HTTPError as e:
+            print("  Gemini refused the request: %s %s" % (e.code, e.read()[:300]))
+            return False
+
+        for item in data.get("embeddings", []):
+            vectors.append(item["values"])
         print("    %d/%d" % (min(i + GEMINI_BATCH, len(texts)), len(texts)))
         time.sleep(GEMINI_PAUSE)
+
+    if len(vectors) != len(texts):
+        print("  got %d vectors for %d books - refusing to write a mismatched file."
+              % (len(vectors), len(texts)))
+        return False
 
     v = np.array(vectors, dtype="float32")
     v /= (np.linalg.norm(v, axis=1, keepdims=True) + 1e-9)
@@ -674,6 +695,9 @@ def main():
                     help="how many books one author may contribute")
     ap.add_argument("--no-vectors", action="store_true",
                     help="skip the Gemini stage even if a key is set")
+    ap.add_argument("--vectors-only", action="store_true",
+                    help="skip everything else and just rebuild vectors.json "
+                         "from an existing books.json")
     ap.add_argument("--out", default="books.json")
     ap.add_argument("--vectors-out", default="vectors.json")
     args = ap.parse_args()
@@ -683,6 +707,16 @@ def main():
     print("=" * 66)
     print("BREVIS DATASET BUILD")
     print("=" * 66)
+
+    # Just the last stage, against a books.json that already exists. Saves
+    # re-scanning millions of rows to redo thirty API calls.
+    if args.vectors_only:
+        with open(args.out, encoding="utf-8") as fh:
+            chosen = json.load(fh)
+        print("Rebuilding vectors for %d books in %s ..." % (len(chosen), args.out))
+        if not build_vectors(chosen, args.vectors_out):
+            sys.exit("Could not build vectors.")
+        return
 
     records = read_hf(args.scan_limit) if args.source == "hf" else read_local(args.scan_limit)
 

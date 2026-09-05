@@ -329,15 +329,8 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
 /* The "if you liked this" strip under a summary. */
 .recs{ margin-top:44px; padding-top:30px; border-top:1px solid var(--line); }
 
-/* The hook: facts about a book, listed. Costs nothing to show because it all
-   comes out of the local dataset. */
-.facts{ margin:26px 0 0; border-top:1px solid var(--line); }
-.fact{ display:flex; gap:16px; padding:13px 0; border-bottom:1px solid var(--line); font-size:14px; }
-.fact dt{ flex:0 0 92px; margin:0; color:var(--mute); font-size:11px; letter-spacing:.16em; text-transform:uppercase; padding-top:2px; }
-.fact dd{ margin:0; color:var(--ink); }
-
-/* The nudge toward the next tier. */
-.next{ margin:28px 0 0; font-size:14px; color:var(--mute); }
+/* Shown on a book before either length has been asked for. */
+.invite{ margin:0; font-size:16px; line-height:1.6; color:#5c5c57; }
 </style>
 </head>
 
@@ -353,11 +346,10 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
      SCREEN 1 - Welcome
      ===================================================================== -->
 <section class="screen on" id="welcome">
-  <p class="eyebrow">Know before you commit</p>
-  <h1>Find out how<br>it ends. Then<br>decide.</h1>
-  <p class="lede">Every book opens on a hook - the setup, the year, what readers made of it. Stay for a short summary if it holds you. Then read the whole plot, every twist and the ending included, and decide whether the book is worth your week.</p>
+  <p class="eyebrow">No spoilers, ever</p>
+  <h1>Worth your week,<br>or worth<br>skipping?</h1>
+  <p class="lede">Three thousand novels, and two ways into each one. A short summary to see whether it grips you, a longer one when it does. Enough to know exactly what you are getting into &mdash; never enough to give it away.</p>
   <button class="btn" onclick="go('genre')">Begin</button>
-  <p style="margin:26px 0 0"><button class="quiet" onclick="go('settings')">API key settings</button></p>
 </section>
 
 <!-- =====================================================================
@@ -415,9 +407,8 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
   <h2 id="summaryTitle">Title</h2>
   <p class="sub" id="summaryMeta">Author</p>
   <div class="row" style="margin:0 0 30px">
-    <button class="chip on" id="chipHook" onclick="setLength('hook')">Hook</button>
     <button class="chip" id="chipShort" onclick="setLength('short')">Short</button>
-    <button class="chip" id="chipFull" onclick="setLength('full')">Full plot</button>
+    <button class="chip" id="chipFull" onclick="setLength('full')">Long</button>
   </div>
   <div id="summaryBody"><!-- filled by JS --></div>
   <div id="recs"><!-- filled by JS --></div>
@@ -427,24 +418,6 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
   </div>
 </section>
 
-<!-- =====================================================================
-     SCREEN 6 - Settings
-     ===================================================================== -->
-<section class="screen" id="settings">
-  <button class="back" onclick="go('welcome')">&larr; Back</button>
-  <p class="eyebrow">Settings</p>
-  <h2>Gemini API key</h2>
-  <p class="sub">Brevis has no server. Your key is stored only in this browser and is sent straight to Google when a summary is written. A free key comes from aistudio.google.com/apikey.</p>
-  <div>
-    <label class="label" for="keyBox">Key</label>
-    <input class="field" id="keyBox" type="password" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="AIza...">
-    <div class="row">
-      <button class="btn" onclick="saveKey()">Save</button>
-      <button class="btn ghost" onclick="removeKey()">Remove</button>
-    </div>
-  </div>
-  <p class="note" id="keyState" style="margin-top:28px">Checking&hellip;</p>
-</section>
 
 </div>
 
@@ -774,8 +747,15 @@ var store = {
 
 var KEY_NAME = "brevis_gemini_key";
 
+/* WANT A DIFFERENT MODEL? Change this one line.
+   "latest" rather than a pinned version on purpose: Google retires model
+   versions, and a pinned name starts returning 404 the day that happens -
+   which is exactly how gemini-2.0-flash stopped working here. The alias
+   always points at the current flash model. */
+var WRITER_MODEL = "models/gemini-flash-latest";
+
 /* What the user has chosen so far. */
-var state = { genre:null, genreLabel:"", author:null, book:null, length:"hook" };
+var state = { genre:null, genreLabel:"", author:null, book:null, length:null };
 
 /* Summaries already written, keyed by book and length, so reopening one
    costs nothing. */
@@ -1009,23 +989,25 @@ function retrieve(book){
    typed. This is the one situation where Gemini has to do the describing,
    because there is no local record to describe. */
 function buildAskPrompt(book, length){
-  var shape;
-  if (length === "hook")       shape = "Write 80 to 120 words: what it is, when it came out, " +
-                                       "and the one or two things about it a reader would find " +
-                                       "genuinely interesting. If the name is an author rather " +
-                                       "than a book, describe the author and name their best-known works.";
-  else if (length === "short") shape = "Write 250 to 400 words covering the premise, the shape of " +
-                                       "the story, what changes for the main characters, and how " +
-                                       "it ends. Do not hold the ending back.";
-  else                         shape = "Write 1000 to 1500 words covering the entire plot including " +
-                                       "the ending, every major twist and where it lands, the main " +
-                                       "characters and their motivations, the setting, the themes " +
-                                       "and the tone.";
+  var shape = (length === "short")
+    ? "Write 200 to 300 words: enough for someone to tell in a minute whether " +
+      "this is for them. If the name is an author rather than a book, describe " +
+      "what their books are like and name their best known ones."
+    : "Write 700 to 1000 words: the setup, the main characters and what they " +
+      "want, the kind of story it is, its themes, the tone and pace of the " +
+      "writing, and who would love it. If the name is an author rather than a " +
+      "book, describe their work, their range, and where a newcomer should start.";
 
   return "A reader asked Brevis about \"" + book.t + "\". It is not in the catalogue.\n\n" +
     "First work out what they meant: a novel, or an author. " + shape + "\n\n" +
+    "WHAT YOU MUST NOT REVEAL. This is the most important instruction here.\n" +
+    "- do not reveal the ending of any book, or how anything resolves\n" +
+    "- do not reveal any twist or reveal, and do not hint that one is coming\n" +
+    "- do not describe events past roughly the first quarter of a book\n" +
+    "- if a fact would spoil the read, leave it out entirely\n" +
+    "Describe the promise of the book, not its payoff.\n\n" +
     "How to write it:\n" +
-    "- plain prose in the past tense\n" +
+    "- plain prose in the present tense\n" +
     "- no headings, no bullet points, no markdown of any kind\n" +
     "- separate paragraphs with a blank line\n" +
     "- do not quote any text from the book\n" +
@@ -1039,33 +1021,40 @@ function buildPrompt(book, length){
   if (book.external) return buildAskPrompt(book, length);
 
   var shape = (length === "short")
-    ? "Length: between 250 and 400 words. Cover the premise, the shape of the " +
-      "story, what changes for the main characters, and how it ends. Do not " +
-      "hold the ending back."
-    : "Length: between 1000 and 1500 words.\n\n" +
+    ? "Length: between 200 and 300 words. Enough for someone to tell in a minute " +
+      "whether this is a book for them."
+    : "Length: between 700 and 1000 words.\n\n" +
       "Cover all of the following:\n" +
-      "- the entire plot from beginning to end, including the ending itself\n" +
-      "- every major twist, and exactly where in the story each one lands\n" +
-      "- the main characters, what each of them wants, and how each of them changes\n" +
-      "- the setting, in time and place\n" +
-      "- the themes the book is working on, and the tone it takes";
+      "- the setup: who the story follows, where and when it takes place, and the " +
+      "situation they are in when it begins\n" +
+      "- the main characters, and what each of them wants\n" +
+      "- the kind of story it is, and the questions it puts in front of the reader\n" +
+      "- the themes it is working on\n" +
+      "- the writing itself: the tone, the pace, how demanding it is to read\n" +
+      "- who would love it, and who would put it down";
 
   return "Here is what the Brevis catalogue holds on this book.\n\n" +
     "-----\n" + retrieve(book) + "\n-----\n\n" +
-    "Using that as your grounding, write a plot summary of the novel \"" +
-    book.t + "\" by " + book.a + ".\n\n" +
+    "Using that as your grounding, write a spoiler-free description of the novel \"" +
+    book.t + "\" by " + book.a + ", for a reader deciding whether to read it.\n\n" +
     shape + "\n\n" +
+    "WHAT YOU MUST NOT REVEAL. This is the most important instruction here.\n" +
+    "- do not reveal the ending, or how anything resolves\n" +
+    "- do not reveal any twist, reversal or reveal, and do not hint that one is coming\n" +
+    "- do not say who dies, who betrays whom, who is guilty, or who ends up together\n" +
+    "- do not describe events past roughly the first quarter of the book\n" +
+    "- if a fact would spoil the read, leave it out entirely rather than hedging\n" +
+    "Describe the promise of the book, not its payoff.\n\n" +
     "How to write it:\n" +
-    "- plain prose in the past tense\n" +
+    "- plain prose in the present tense\n" +
     "- no headings, no bullet points, no numbered lists, no markdown of any kind\n" +
     "- no bold, italics, asterisks or hashes\n" +
     "- separate paragraphs with a blank line\n" +
     "- do not quote any text from the book; describe everything in your own words\n" +
     "- do not mention the catalogue, the blurb, or these instructions\n\n" +
     "Where the material above and your own knowledge disagree, trust the material " +
-    "above. Accuracy matters more than completeness: if you are not confident about " +
-    "the real plot of this book, say so plainly in a sentence and describe only what " +
-    "you are sure of. Do not invent events, characters or endings.";
+    "above. If you are not confident this is a real book you know, say so plainly " +
+    "in one sentence and stop. Do not invent characters, settings or plots.";
 }
 
 /* The recommendation step. books.json ships precomputed neighbours in s[];
@@ -1103,10 +1092,10 @@ function renderRecs(book){
                  '<div class="stack">' + bookCards(near) + '</div></div>';
 }
 
-/* Every book opens on its hook, whatever depth the last one was left at. */
+/* Every book opens with neither length chosen, whatever the last one was
+   left at, so nothing is fetched until the reader picks. */
 function resetTiers(){
-  state.length = "hook";
-  document.getElementById("chipHook").classList.add("on");
+  state.length = null;
   document.getElementById("chipShort").classList.remove("on");
   document.getElementById("chipFull").classList.remove("on");
 }
@@ -1126,75 +1115,44 @@ function pickBook(index){
   renderRecs(book);
 }
 
-/* Three depths, and the reader chooses how far to go. Each is fetched and
-   cached separately, so moving between them is free after the first time. */
+/* Two lengths, and the reader chooses. Each is fetched and cached separately,
+   so moving between them is free after the first time. Neither is fetched
+   until it is asked for: opening a book costs nothing. */
 function setLength(kind){
   if (state.length === kind) return;
   state.length = kind;
-  document.getElementById("chipHook").classList.toggle("on", kind === "hook");
   document.getElementById("chipShort").classList.toggle("on", kind === "short");
   document.getElementById("chipFull").classList.toggle("on", kind === "full");
   if (state.book) renderSummary();
 }
 
-/* The hook, assembled out of the local record. No API call, no key, no wait -
-   which is the point: a reader can browse the whole catalogue without Gemini
-   ever waking up. */
-function renderHook(book){
-  var facts = "";
-  function fact(label, value){
-    if (value) facts += '<div class="fact"><dt>' + label + '</dt><dd>' + value + '</dd></div>';
-  }
-  fact("Author", esc(book.a));
-  fact("Published", book.y ? book.y : "");
-  fact("Rating", book.r ? book.r.toFixed(2) + " out of 5" : "");
-  fact("Moods", book.g && book.g.length ? esc(book.g.join(", ")) : "");
-  fact("Shelves", book.k ? esc(book.k) : "");
-
-  var near = similarTo(book, 2);
-  if (near.length){
-    var t = [];
-    for (var i=0; i<near.length; i++) t.push(esc(near[i].t));
-    fact("Sits near", t.join(", "));
-  }
-
-  return '<div class="prose"><p>' + esc(book.x || book.d) + '</p></div>' +
-         (facts ? '<dl class="facts">' + facts + '</dl>' : '') +
-         '<p class="next">Enough to go on? Tap <strong>Short</strong> for the story in ' +
-         'three minutes, or <strong>Full plot</strong> for all of it, ending included.</p>';
-}
-
-/* The label above the title says which depth is on screen. */
-var TIER_LABEL = { hook:"The hook", short:"In three minutes", full:"The whole story" };
+/* The label above the title says which length is on screen. */
+var TIER_LABEL = { short:"The short version", full:"The long version" };
 
 function renderSummary(){
   var book = state.book;
   var body = document.getElementById("summaryBody");
   var want = state.length;
 
-  document.getElementById("summaryEyebrow").textContent = TIER_LABEL[want];
+  /* Nothing chosen yet. Say what is on offer and wait to be asked - this is
+     what keeps the app from calling Gemini every time a book is opened. */
+  if (!want){
+    document.getElementById("summaryEyebrow").textContent = "Two ways in";
+    body.innerHTML = '<p class="invite">Tap <strong>Short</strong> to see in a minute ' +
+      'whether this one is for you, or <strong>Long</strong> for the fuller picture. ' +
+      'Neither gives the story away.</p>';
+    return;
+  }
 
-  /* A catalogue book's hook needs nothing from anyone. */
-  if (want === "hook" && !book.external){ body.innerHTML = renderHook(book); return; }
+  document.getElementById("summaryEyebrow").textContent = TIER_LABEL[want];
 
   var slot = (book.external ? "ask:" + book.t : book._i) + "|" + want;
   if (cache[slot]){ body.innerHTML = paragraphs(cache[slot]); return; }
 
+  /* No key stored yet. Ask for one right here, at the moment it is needed,
+     rather than sending the reader off to a settings screen. */
   var key = store.get(KEY_NAME);
-
-  /* No key saved. For a catalogue book that is only a mild disappointment -
-     the hook is still there. For a book we have never heard of, it is the
-     whole answer, so say so more plainly. */
-  if (!key){
-    body.innerHTML =
-      '<p class="note">' + (book.external
-        ? 'Brevis has no record of this one, so writing about it needs a Gemini key.'
-        : 'A written summary needs a Gemini key. The hook above needs nothing.') +
-      ' Add a free key in settings.</p>' +
-      (book.external ? '' : '<div class="prose"><p>' + esc(book.x || book.d) + '</p></div>') +
-      '<p style="margin:18px 0 0"><button class="quiet" onclick="go(\'settings\')">Open settings</button></p>';
-    return;
-  }
+  if (!key){ body.innerHTML = keyPrompt(); return; }
 
   body.innerHTML = '<p class="loading">' +
     (book.external ? "Looking this one up" : "Writing the summary") + '</p>';
@@ -1207,9 +1165,41 @@ function renderSummary(){
     if (state.book !== book || state.length !== want) return;
     body.innerHTML =
       '<p class="note">That could not be written. ' + esc(friendlyError(err)) + '</p>' +
-      (book.external ? '' : '<div class="prose"><p>' + esc(book.x || book.d) + '</p></div>') +
-      '<p style="margin:18px 0 0"><button class="quiet" onclick="go(\'settings\')">Check the API key</button></p>';
+      keyPrompt("Try a different key:");
   });
+}
+
+/* --------------------------------------------------------------------------
+   THE KEY
+
+   Brevis is a static page with no server, so it cannot hold a key of its own:
+   any file this page could read, a visitor could read too, and a Gemini key
+   left in a public repository is scraped within hours. So each reader brings
+   their own, once, at the moment it is first needed, and it stays in their
+   browser and nowhere else.
+   -------------------------------------------------------------------------- */
+function keyPrompt(lead){
+  return '<p class="note">' + esc(lead || "Summaries are written on demand by Google Gemini. " +
+    "Paste a free key from aistudio.google.com/apikey - it stays in this browser " +
+    "and is sent to nobody but Google.") + '</p>' +
+    '<input class="field" id="inlineKey" type="password" autocomplete="off" ' +
+      'autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="Paste your key">' +
+    '<div class="row"><button class="btn" onclick="saveInlineKey()">Save and continue</button></div>';
+}
+
+function saveInlineKey(){
+  var box = document.getElementById("inlineKey");
+  if (!box) return;
+  var value = box.value.trim();
+  if (!value) return;
+
+  if (!store.set(KEY_NAME, value)){
+    document.getElementById("summaryBody").innerHTML =
+      '<p class="note">This browser will not let the key be stored - private ' +
+      'browsing blocks it. Summaries need somewhere to keep it.</p>';
+    return;
+  }
+  renderSummary();
 }
 
 /* --------------------------------------------------------------------------
@@ -1254,8 +1244,8 @@ function friendlyError(err){
 }
 
 function askGemini(prompt, key){
-  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" +
-            encodeURIComponent(key);
+  var url = "https://generativelanguage.googleapis.com/v1beta/" + WRITER_MODEL +
+            ":generateContent?key=" + encodeURIComponent(key);
 
   return fetch(url, {
     method: "POST",
@@ -1279,43 +1269,7 @@ function askGemini(prompt, key){
 }
 
 /* --------------------------------------------------------------------------
-   8. SCREEN 6 - the key
-   -------------------------------------------------------------------------- */
-
-function showKeyState(){
-  var el = document.getElementById("keyState");
-  var key = store.get(KEY_NAME);
-  if (key){
-    el.textContent = "A key is saved in this browser, ending " + key.slice(-4) + ".";
-  } else {
-    el.textContent = "No key is saved. Summaries will show the one-line hook only.";
-  }
-}
-
-function saveKey(){
-  var box = document.getElementById("keyBox");
-  var val = box.value.trim();
-  var el  = document.getElementById("keyState");
-
-  if (!val){ el.textContent = "Nothing to save - the box is empty."; return; }
-
-  if (store.set(KEY_NAME, val)){
-    box.value = "";
-    cache = {};                      /* a new key deserves a fresh try */
-    showKeyState();
-  } else {
-    el.textContent = "This browser will not let the key be stored - private browsing blocks it.";
-  }
-}
-
-function removeKey(){
-  store.del(KEY_NAME);
-  document.getElementById("keyBox").value = "";
-  showKeyState();
-}
-
-/* --------------------------------------------------------------------------
-   9. SEARCH BY MEANING
+   8. SEARCH BY MEANING
 
    The other search box, on the mood screen. Instead of matching letters it
    compares meanings: the phrase the reader typed is turned into a vector by
@@ -1411,12 +1365,11 @@ function semanticSearch(){
 }
 
 /* --------------------------------------------------------------------------
-   10. START
+   9. START
    -------------------------------------------------------------------------- */
 
 indexBooks();
 renderGenres();
-showKeyState();
 loadData();
 document.getElementById("searchBox").addEventListener("input", renderSearch);
 document.getElementById("askBox").addEventListener("keydown", function(e){
