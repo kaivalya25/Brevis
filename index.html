@@ -357,10 +357,17 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
      ===================================================================== -->
 <section class="screen" id="genre">
   <button class="back" onclick="go('welcome')">&larr; Back</button>
-  <p class="eyebrow">Step one</p>
-  <h2>What are you in the mood for?</h2>
-  <p class="sub">Choose one.</p>
-  <div class="grid" id="genreGrid"><!-- filled by JS --></div>
+  <p class="eyebrow">Find your next book</p>
+  <h2>More like a book you loved</h2>
+  <div>
+    <input class="field" id="likeBox" type="search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="Type a title you loved" aria-label="A book you loved">
+    <div id="likeList" style="margin-top:10px"><!-- filled by JS --></div>
+  </div>
+  <div>
+    <hr class="rule">
+    <p class="label">Or pick a mood</p>
+    <div class="grid" id="genreGrid"><!-- filled by JS --></div>
+  </div>
   <div>
     <hr class="rule">
     <label class="label" for="askBox">Or describe a book &mdash; or name one we might not have</label>
@@ -402,8 +409,8 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
      SCREEN 5 - Summary
      ===================================================================== -->
 <section class="screen" id="summary">
-  <button class="back" onclick="go('books')">&larr; Other books</button>
-  <p class="eyebrow" id="summaryEyebrow">The hook</p>
+  <button class="back" onclick="go(state.back)">&larr; Back</button>
+  <p class="eyebrow" id="summaryEyebrow">Two ways in</p>
   <h2 id="summaryTitle">Title</h2>
   <p class="sub" id="summaryMeta">Author</p>
   <div class="row" style="margin:0 0 30px">
@@ -413,7 +420,7 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
   <div id="summaryBody"><!-- filled by JS --></div>
   <div id="recs"><!-- filled by JS --></div>
   <div class="row">
-    <button class="btn ghost" onclick="go('books')">Other books</button>
+    <button class="btn ghost" onclick="go(state.back)">Back</button>
     <button class="btn ghost" onclick="go('welcome')">Start over</button>
   </div>
 </section>
@@ -687,7 +694,19 @@ var VECTORS = null;     /* {dims, scale, data:[[int8,...]]} once loaded */
 var USING_FULL = false; /* true once books.json has replaced the seed */
 
 function indexBooks(){
-  for (var i=0; i<BOOKS.length; i++) BOOKS[i]._i = i;
+  for (var i=0; i<BOOKS.length; i++){
+    BOOKS[i]._i = i;
+    BOOKS[i]._n = norm(BOOKS[i].t);    /* for "More like this" title matching */
+    BOOKS[i]._na = norm(BOOKS[i].a);
+    BOOKS[i]._nx = " " + norm(BOOKS[i].x || BOOKS[i].d || "") + " ";   /* blurb, for series names */
+  }
+}
+
+/* Lower-case, accents off, punctuation to spaces: "Gödel, Escher" -> "godel escher". */
+function norm(s){
+  return String(s).toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function loadData(){
@@ -702,6 +721,8 @@ function loadData(){
       USING_FULL = true;
       indexBooks();
       renderGenres();
+      renderLike();
+      document.getElementById("askList").innerHTML = "";
       return fetch("vectors.json");
     }).then(function(r){
       return (r && r.ok) ? r.json() : null;
@@ -755,7 +776,7 @@ var KEY_NAME = "brevis_gemini_key";
 var WRITER_MODEL = "models/gemini-flash-latest";
 
 /* What the user has chosen so far. */
-var state = { genre:null, genreLabel:"", author:null, book:null, length:null };
+var state = { genre:null, genreLabel:"", author:null, book:null, length:null, back:"books" };
 
 /* Summaries already written, keyed by book and length, so reopening one
    costs nothing. */
@@ -1057,11 +1078,28 @@ function buildPrompt(book, length){
     "in one sentence and stop. Do not invent characters, settings or plots.";
 }
 
-/* The recommendation step. books.json ships precomputed neighbours in s[];
-   the seed list has none, so fall back to books sharing the most moods. */
+/* The recommendation step, best source first:
+
+   1. The Gemini vectors in vectors.json. The book's own stored vector is
+      compared against every other book's - arithmetic on data already in the
+      page, so still no API call. These are by far the best neighbours.
+   2. The neighbours build_dataset.py precomputed into s[], from the small
+      local model. Used when vectors.json is missing (e.g. on file://).
+   3. The seed list has neither, so books sharing the most moods.
+
+   Books by the same author are left out: recommending more Sanderson to
+   someone who loved Sanderson tells them nothing. */
 function similarTo(book, howMany){
   howMany = howMany || 4;
   var out = [];
+
+  if (VECTORS && BOOKS[book._i] === book){
+    var ranked = nearestBooks(VECTORS.data[book._i], howMany * 4);
+    for (var v=0; v<ranked.length && out.length<howMany; v++){
+      if (ranked[v] !== book && ranked[v].a !== book.a) out.push(ranked[v]);
+    }
+    return out;
+  }
 
   if (book.s && book.s.length){
     for (var i=0; i<book.s.length && out.length<howMany; i++){
@@ -1100,9 +1138,18 @@ function resetTiers(){
   document.getElementById("chipFull").classList.remove("on");
 }
 
+/* Which screen is showing - so Back on a summary returns there, whether the
+   reader came from an author's list, "More like this" or a search. */
+function currentScreen(){
+  var on = document.querySelector(".screen.on");
+  return on ? on.id : "welcome";
+}
+
 function pickBook(index){
   var book = BOOKS[index];
   if (!book) return;
+  var here = currentScreen();
+  if (here !== "summary") state.back = here;   /* a recommendation keeps the old one */
   state.book = book;
   resetTiers();
 
@@ -1178,28 +1225,36 @@ function renderSummary(){
    their own, once, at the moment it is first needed, and it stays in their
    browser and nowhere else.
    -------------------------------------------------------------------------- */
-function keyPrompt(lead){
+/* What to do once a key has been saved - set by whoever showed the prompt. */
+var afterKey = null;
+
+function keyPrompt(lead, then){
+  afterKey = then || renderSummary;
   return '<p class="note">' + esc(lead || "Summaries are written on demand by Google Gemini. " +
     "Paste a free key from aistudio.google.com/apikey - it stays in this browser " +
     "and is sent to nobody but Google.") + '</p>' +
-    '<input class="field" id="inlineKey" type="password" autocomplete="off" ' +
+    '<input class="field" type="password" autocomplete="off" ' +
       'autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="Paste your key">' +
-    '<div class="row"><button class="btn" onclick="saveInlineKey()">Save and continue</button></div>';
+    '<div class="row"><button class="btn" onclick="saveInlineKey(this)">Save and continue</button></div>';
 }
 
-function saveInlineKey(){
-  var box = document.getElementById("inlineKey");
-  if (!box) return;
+/* The prompt can be on more than one screen at once (hidden screens keep their
+   contents), so find the box beside the button that was pressed rather than
+   looking it up by id. */
+function saveInlineKey(button){
+  var box = button.parentNode.previousElementSibling;
   var value = box.value.trim();
   if (!value) return;
 
   if (!store.set(KEY_NAME, value)){
-    document.getElementById("summaryBody").innerHTML =
+    box.parentNode.innerHTML =
       '<p class="note">This browser will not let the key be stored - private ' +
-      'browsing blocks it. Summaries need somewhere to keep it.</p>';
+      'browsing blocks it.</p>';
     return;
   }
-  renderSummary();
+  var next = afterKey || renderSummary;
+  afterKey = null;
+  next();
 }
 
 /* --------------------------------------------------------------------------
@@ -1208,6 +1263,8 @@ function saveInlineKey(){
    is served from the local dataset.
    -------------------------------------------------------------------------- */
 function askAbout(query){
+  var here = currentScreen();
+  if (here !== "summary") state.back = here;
   state.book = { t:query, a:"", r:0, y:0, g:[], d:"", external:true };
   resetTiers();
 
@@ -1350,8 +1407,9 @@ function semanticSearch(){
 
   var key = store.get(KEY_NAME);
   if (!key){
-    out.innerHTML = '<p class="note">Search by meaning needs a Gemini key to read ' +
-      'your phrase. Add one in settings.</p>';
+    out.innerHTML = keyPrompt("Search by meaning needs a Gemini key to read your " +
+      "phrase. Paste a free one from aistudio.google.com/apikey - it stays in this browser.",
+      semanticSearch);
     return;
   }
 
@@ -1365,13 +1423,174 @@ function semanticSearch(){
 }
 
 /* --------------------------------------------------------------------------
-   9. START
+   9. MORE LIKE THIS
+
+   Type a book you loved, pick it from the matches, and get the books that sit
+   nearest to it. Those neighbours were worked out offline by build_dataset.py
+   from the Chroma embeddings and ship inside books.json (each book's s field),
+   so this costs nothing: no API call, no key, no wait.
+
+   Only a book the catalogue does not have needs Gemini - and only on a tap.
+   -------------------------------------------------------------------------- */
+
+/* Best matches first: exact title, then title starting with what was typed,
+   then a word in the title starting with it, then anywhere in the title, then
+   every typed word starting some word of the title ("way kings"), then the
+   author, and only if all of that finds nothing, the blurb. Ties go to the
+   better-rated book. */
+function matchTitles(query, howMany){
+  var q = norm(query);
+  if (q.length < 2) return [];
+  var words = q.split(" ");
+
+  var scored = [];
+  for (var i=0; i<BOOKS.length; i++){
+    var b = BOOKS[i], t = b._n, s = 0;
+    if (t === q)                                s = 6;
+    else if (t.indexOf(q) === 0)                s = 5;
+    else if ((" " + t).indexOf(" " + q) !== -1) s = 4;
+    else if (t.indexOf(q) !== -1)               s = 3;
+    else if (wordsStart(words, t))              s = 2;
+    else if (b._na.indexOf(q) !== -1)           s = 1;
+    if (s) scored.push({ b:b, s:s + b.r / 100 });
+  }
+  /* Nothing in any title or author. People often type a series name -
+     "mistborn", "stormlight" - which the stored titles leave out but the
+     blurbs mention. Only as a fallback, and only as whole words, because a
+     common word like "love" turns up in hundreds of blurbs. */
+  if (!scored.length && q.length >= 4){
+    for (var j=0; j<BOOKS.length; j++){
+      if (BOOKS[j]._nx.indexOf(" " + q + " ") !== -1) scored.push({ b:BOOKS[j], s:BOOKS[j].r });
+    }
+  }
+
+  scored.sort(function(x,y){ return y.s - x.s; });
+
+  var out = [];
+  for (var k=0; k<scored.length && out.length<howMany; k++) out.push(scored[k].b);
+  return out;
+}
+
+function wordsStart(words, text){
+  var padded = " " + text;
+  for (var i=0; i<words.length; i++) if (padded.indexOf(" " + words[i]) === -1) return false;
+  return true;
+}
+
+/* As the reader types: the catalogue titles that match. */
+function renderLike(){
+  var q = document.getElementById("likeBox").value.trim();
+  var out = document.getElementById("likeList");
+
+  if (q.length < 2){ out.innerHTML = ""; return; }
+
+  var hits = matchTitles(q, 6);
+  if (!hits.length){
+    out.innerHTML = '<p class="empty">That one is not in the catalogue.</p>' +
+      '<button class="card" onclick="likeOutside(' + jsArg(q) + ')">' +
+        '<span class="name">Find books like &ldquo;' + esc(q) + '&rdquo;</span>' +
+        '<span class="hook">Brevis will search the catalogue by meaning instead.</span>' +
+      '</button>';
+    return;
+  }
+
+  var html = "";
+  for (var i=0; i<hits.length; i++){
+    var b = hits[i];
+    html += '<button class="card" onclick="showLike(' + b._i + ')">' +
+              '<span class="name">' + esc(b.t) + '</span>' +
+              '<span class="meta">' + esc(b.a) + (b.y ? ' &middot; ' + b.y : '') + '</span>' +
+            '</button>';
+  }
+  out.innerHTML = '<div class="stack">' + html + '</div>';
+}
+
+/* The reader picked their book: show its five nearest neighbours. */
+function showLike(index){
+  var book = BOOKS[index];
+  if (!book) return;
+
+  document.getElementById("likeBox").value = book.t;   /* setting it does not fire "input" */
+  var near = similarTo(book, 5);
+
+  document.getElementById("likeList").innerHTML =
+    '<p class="sub" style="margin:22px 0 14px">Because you loved <strong>' + esc(book.t) +
+      '</strong> by ' + esc(book.a) + ':</p>' +
+    '<div class="stack">' +
+      (bookCards(near) || '<p class="empty">Nothing close enough in the catalogue.</p>') +
+    '</div>' +
+    '<p style="margin:14px 0 0"><button class="quiet" onclick="pickBook(' + book._i + ')">' +
+      'Or read about ' + esc(book.t) + ' itself</button></p>';
+}
+
+/* A book the catalogue has never heard of, so there is no stored vector to
+   start from. Embedding the bare title does not work: "Gone Girl" lands next
+   to a book called "Gone", because a title is a few words with no meaning
+   attached. So Gemini first writes a short blurb for it, and THAT is embedded.
+   The catalogue's vectors were made from blurbs, so a blurb lands in the same
+   neighbourhood as books that are actually alike. Two calls, only on a tap. */
+function describePrompt(query){
+  return "Describe the novel \"" + query + "\" in two or three plain sentences, the way a " +
+    "publisher's blurb would: the premise, the setting, the genre and the tone. No " +
+    "spoilers, no markdown. If you do not know a novel by that name, reply with exactly " +
+    "the word UNKNOWN and nothing else.";
+}
+function likeOutside(query){
+  var out = document.getElementById("likeList");
+
+  if (!VECTORS){
+    out.innerHTML = '<p class="note">Finding neighbours for a book outside the catalogue ' +
+      'needs vectors.json, which build_dataset.py writes.</p>';
+    return;
+  }
+
+  var key = store.get(KEY_NAME);
+  if (!key){
+    out.innerHTML = keyPrompt("Finding books like one outside the catalogue needs a Gemini " +
+      "key. Paste a free one from aistudio.google.com/apikey - it stays in this browser.",
+      function(){ likeOutside(query); });
+    return;
+  }
+
+  out.innerHTML = '<p class="loading">Looking</p>';
+  var blurb = "";
+  askGemini(describePrompt(query), key).then(function(text){
+    blurb = text.trim();
+    if (/^UNKNOWN\b/i.test(blurb)) throw new Error("UNKNOWN");
+    return embedQuery(blurb, key);
+  }).then(function(vec){
+    var hits = nearestBooks(vec, 5);
+    /* Show how Gemini read the title, so a misidentified book is obvious. */
+    out.innerHTML = '<p class="sub" style="margin:22px 0 8px">Closest in the catalogue to <strong>' +
+      esc(query) + '</strong>:</p>' +
+      '<p class="sub" style="margin:0 0 14px;font-style:italic">' + esc(blurb) + '</p>' +
+      '<div class="stack">' + (bookCards(hits) || '<p class="empty">Nothing close enough.</p>') + '</div>';
+  }).catch(function(err){
+    if (err && err.message === "UNKNOWN"){
+      out.innerHTML = '<p class="note">Brevis does not recognise a novel called &ldquo;' +
+        esc(query) + '&rdquo;. Check the spelling, or try the full title.</p>';
+      return;
+    }
+    out.innerHTML = '<p class="note">Could not search: ' + esc(friendlyError(err)) + '</p>';
+  });
+}
+
+/* --------------------------------------------------------------------------
+   10. START
    -------------------------------------------------------------------------- */
 
 indexBooks();
 renderGenres();
 loadData();
 document.getElementById("searchBox").addEventListener("input", renderSearch);
+document.getElementById("likeBox").addEventListener("input", renderLike);
+document.getElementById("likeBox").addEventListener("keydown", function(e){
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  var best = matchTitles(this.value, 1)[0];
+  if (best) showLike(best._i);
+  else if (this.value.trim().length >= 2) likeOutside(this.value.trim());
+});
 document.getElementById("askBox").addEventListener("keydown", function(e){
   if (e.key === "Enter"){ e.preventDefault(); semanticSearch(); }
 });

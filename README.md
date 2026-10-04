@@ -38,8 +38,8 @@ with a nudge for having written several good books in it rather than one lucky o
 The shortlisted blurbs are embedded into a local Chroma vector database. Each of
 the eleven moods is a sentence — *"a quiet, sad, reflective novel about loss,
 memory, grief and regret"* — and querying the index with it is what sorts books
-into moods. The same index gives every book its nearest neighbours, which is
-where **If you liked this** comes from.
+into moods. The same index also gives every book a list of nearest neighbours,
+kept as a fallback for when the stronger Gemini vectors below aren't loaded.
 
 None of that runs on your phone. A vector database at runtime would need a
 server, so retrieval happens once offline and only the result ships.
@@ -49,11 +49,42 @@ gathers the book's blurb, rating, moods, shelves and nearest neighbours out of
 the local dataset and puts them in the prompt as grounding, instructing the model
 to trust that material over its own memory.
 
-The search box on the mood screen is genuine vector search in the browser. Your
-phrase goes to Gemini's embedding model, comes back as 128 numbers, and is
-compared against one stored vector per book — same model, same size, same space,
-so a dot product ranks them. The vectors are quantised to a byte each, which is
-why the index is under a megabyte rather than several.
+`vectors.json` holds one Gemini embedding per book, 128 numbers quantised to a
+byte each, which is why the whole index is under a megabyte. Everything that
+needs "books like this one" compares those vectors in the browser with a dot
+product: **More like this**, **If you liked this**, and the neighbours fed into a
+summary's grounding. That's arithmetic on data already in the page, so it needs
+no API call. It's also much better than the build's local model: for *The Way of
+Kings* the local model suggested *A Mother's Shame*; the Gemini vectors suggest
+*A Memory of Light*, *A Game of Thrones* and *The Dragon Reborn*.
+
+The describe box at the bottom of the mood screen does the same search starting
+from your own words. Your phrase goes to Gemini's embedding model and is compared
+against every book's vector.
+
+### More like this
+
+The first thing on the mood screen. Type a book you loved, pick it from the
+matches, and get its five nearest neighbours.
+
+- **Matching** ranks exact titles first, then titles starting with what you
+  typed, then any word in the title, then authors. Accents and punctuation are
+  ignored, and `way kings` finds *The Way of Kings*.
+- **Series names** — people type *mistborn*, but the stored title is *The Final
+  Empire*. If nothing matches a title or author, the blurbs are searched for the
+  whole word, which is where series names turn up. Only as a fallback: a common
+  word like *love* appears in 839 blurbs.
+- **Same-author books are left out.** Recommending more Sanderson to someone who
+  loved Sanderson tells them nothing; there's a link to the book itself instead.
+- **Free and instant** for anything in the catalogue. No key, no API call.
+
+**Books the catalogue doesn't have** fall back to Gemini, only when you tap.
+Embedding a bare title doesn't work: *Gone Girl* landed next to a book called
+*Gone*, because a title is a few words with no meaning attached. So Gemini first
+writes a two-sentence blurb for the book, and that blurb is embedded instead.
+The catalogue vectors were built from blurbs, so it lands among books that are
+actually alike. The blurb is shown above the results, so a misidentified book is
+obvious, and a title Gemini doesn't recognise is refused rather than guessed at.
 
 ### 3. Two summaries, and no spoilers
 
@@ -116,7 +147,7 @@ working here mid-build.
 ## Using it
 
 1. Open the app in Safari.
-2. Pick a mood, an author, a book.
+2. Type a book you loved for five like it, or pick a mood, an author, a book.
 3. Tap **Short** or **Long**. The first time, paste a Gemini key when asked.
 
 On an iPhone, Share → **Add to Home Screen** and it opens like an app.
