@@ -6,7 +6,7 @@ one short, one long — with enough detail to decide, and never enough to spoil 
 One HTML file. No server, no database, no build step, no packages, no accounts,
 no tracking. It works when you double-click it and it works on a static host.
 
-**Live:** https://kaivalya25.github.io/Brevis/
+**Live:** [kaivalya25.github.io/Brevis](https://kaivalya25.github.io/Brevis/)
 
 ---
 
@@ -70,10 +70,35 @@ through, and each problem got its own fix:
 | *The Hobbit: The Desolation of Smaug* (a film guide) | Part of the title matched | A whole-title match always beats a part-title match, however many ratings the part-match has |
 | *Dune: Red Plague* by **Brian** Herbert | Only surnames were compared | First initials must agree too |
 | *Fahrenheit 451: Novel-Ties Study Guide*, *Remembrance of Things Past: Vol 2* | Must-include books skipped the "one story" filter | They no longer skip it, and the filter now catches volumes |
+| *Harper Lee's To Kill a Mockingbird* by Harold Bloom (a study guide) | Its title contains the famous title | A famous author's name + 's + their famous title, by someone else, is a companion and is dropped. *Ender's Game* and *The Handmaid's Tale* are unaffected |
+| *Frankenstein: The 1818 Text* (1.6M ratings) not matched | Wikidata writes *Frankenstein; or, The Modern Prometheus*, with a semicolon | Titles are split at semicolons as well as colons. This fix landed after the current data was built, so it takes effect on the next build |
 
 Famous novels by authors with fewer than three books stay in the catalogue
 (*To Kill a Mockingbird*), but the app leaves those authors off the mood → author
 ladder so it never dead-ends. They're found through **More like this** and search.
+
+**Results.** The full build found **752 of the 1,500** famous novels with a usable
+English edition, and all 752 shipped. The catalogue is now **2,997 books by 768
+authors**, 495 of whom have three or more books and appear on the mood ladder.
+Newly included: *Pride and Prejudice*, *Outlander*, *To Kill a Mockingbird*,
+*1984*, *The Great Gatsby* and *Dune*, among others.
+
+**What it can't fix.** The other 748 aren't in the dataset in any usable form,
+and that includes some of the biggest bestsellers. A full-dataset search for
+them found only what surrounds the book, never the book itself:
+
+| Novel | What the dataset has instead |
+|---|---|
+| *The Hunger Games* | A trilogy box set, a movie companion, a "Tribute Guide" |
+| *Gone Girl* | A "Review" knockoff, two parodies, a "Sidekick" summary |
+| *Harry Potter and the Philosopher's Stone* | A pop-up book, a piece of fan fiction |
+| *The Name of the Wind*, *Normal People*, *The Martian* | Nothing usable |
+
+The filters rightly reject all of those, and no matching logic can find a book
+the scrape never captured. Closing this gap needs a second source of blurbs for
+the missing novels, such as Open Library. They're listed in `famous_missing.txt`
+after each build. For now, books outside the catalogue are still reachable
+through the Gemini fallback in **More like this**.
 
 ### 2. Retrieval-augmented generation
 
@@ -99,6 +124,21 @@ summary's grounding. That's arithmetic on data already in the page, so it needs
 no API call. It's also much better than the build's local model: for *The Way of
 Kings* the local model suggested *A Mother's Shame*; the Gemini vectors suggest
 *A Memory of Light*, *A Game of Thrones* and *The Dragon Reborn*.
+
+**Hubness correction.** Plain cosine similarity has a known flaw: a few vectors
+sit close to everything and show up in almost every neighbour list. Here
+*Atonement* appeared in **91** different books' top five. The standard fix is
+**CSLS** (cross-domain similarity local scaling). The build stores a "hub"
+score per book, its mean similarity to its 25 nearest neighbours, and the app
+ranks by `2 × cosine − hub`, which docks books for being close to everything:
+
+| | Plain cosine | With CSLS |
+|---|---|---|
+| Most times any one book is recommended | 91 (*Atonement*) | 29 |
+| Share of the catalogue that ever gets recommended | 74% | 93% |
+
+Measured over every book's top five, offline in numpy and again in the browser,
+with identical results. A lookup takes under a millisecond.
 
 The describe box at the bottom of the mood screen does the same search starting
 from your own words. Your phrase goes to Gemini's embedding model and is compared
@@ -307,6 +347,6 @@ Everything is in `index.html`:
 
 ## Size
 
-`books.json` is about 2.8 MB and `vectors.json` about 950 KB, both downloaded on
+`books.json` is about 2.8 MB and `vectors.json` about 1 MB, both downloaded on
 first load and then cached by the browser. If that is too much over cellular,
 rebuild with a smaller `--export`; 1,500 books roughly halves it.

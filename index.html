@@ -1371,17 +1371,39 @@ function embedQuery(text, key){
   });
 }
 
+/* Ranking by plain cosine similarity has a known flaw called hubness: a few
+   books sit close to everything and turn up in everyone's list. Here Atonement
+   was in 91 different books' top five. The fix is CSLS, which docks each book
+   by how close it is to everything else on average - vectors.json carries
+   that "hub" score for every book, precomputed by build_dataset.py:
+
+       score = 2 * cosine - hub
+
+   With it, the most any one book is recommended drops from 91 to 29, and the
+   share of the catalogue that ever gets recommended rises from 74% to 93%. */
 function nearestBooks(query, howMany){
-  /* Both sides are unit length, so the dot product is the cosine. */
   var norm = 0;
   for (var i=0; i<query.length; i++) norm += query[i]*query[i];
   norm = Math.sqrt(norm) || 1;
 
-  var rows = VECTORS.data, scored = [];
+  var rows = VECTORS.data, hub = VECTORS.hub, scored = [];
+
+  /* Row lengths, worked out once: the stored vectors are rounded to whole
+     numbers, so they are only roughly unit length. */
+  if (!VECTORS._norms){
+    VECTORS._norms = [];
+    for (var n=0; n<rows.length; n++){
+      var sq = 0;
+      for (var d=0; d<rows[n].length; d++) sq += rows[n][d] * rows[n][d];
+      VECTORS._norms.push(Math.sqrt(sq) || 1);
+    }
+  }
+
   for (var r=0; r<rows.length; r++){
     var row = rows[r], dot = 0;
     for (var c=0; c<row.length; c++) dot += row[c] * query[c];
-    scored.push({ i:r, s:dot / norm });
+    var cos = dot / (norm * VECTORS._norms[r]);
+    scored.push({ i:r, s: hub ? 2 * cos - hub[r] : cos });
   }
   scored.sort(function(a,b){ return b.s - a.s; });
 
