@@ -5,3 +5,5 @@ __pycache__/
 # built dataset - regenerate with build_dataset.py if you prefer not to commit it
 # books.json
 # vectors.json
+famous_missing.txt
+trial_books.json

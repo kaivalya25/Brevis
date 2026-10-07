@@ -693,8 +693,13 @@ const GENRES = [
 var VECTORS = null;     /* {dims, scale, data:[[int8,...]]} once loaded */
 var USING_FULL = false; /* true once books.json has replaced the seed */
 
+/* How many catalogue books each author has. Filled by indexBooks(). */
+var AUTHOR_BOOKS = {};
+
 function indexBooks(){
+  AUTHOR_BOOKS = {};
   for (var i=0; i<BOOKS.length; i++){
+    AUTHOR_BOOKS[BOOKS[i].a] = (AUTHOR_BOOKS[BOOKS[i].a] || 0) + 1;
     BOOKS[i]._i = i;
     BOOKS[i]._n = norm(BOOKS[i].t);    /* for "More like this" title matching */
     BOOKS[i]._na = norm(BOOKS[i].a);
@@ -815,6 +820,11 @@ function pickGenre(tag){
    author, average the ratings WITHIN THAT MOOD, then add a small nudge for
    having written several of them. The nudge stops one lucky 4.5 from
    outranking a writer with three strong books in the same mood.
+
+   Only authors with at least three books in the whole catalogue are ranked,
+   so tapping one never dead-ends. The catalogue also holds famous novels by
+   authors with fewer - To Kill a Mockingbird, say - and those are reached
+   through "More like this" and the search box instead.
    -------------------------------------------------------------------------- */
 
 function topAuthors(tag){
@@ -822,6 +832,7 @@ function topAuthors(tag){
   for (var i=0; i<BOOKS.length; i++){
     var b = BOOKS[i];
     if (b.g.indexOf(tag) === -1) continue;
+    if ((AUTHOR_BOOKS[b.a] || 0) < 3) continue;
     if (!groups[b.a]) groups[b.a] = { name:b.a, sum:0, count:0 };
     groups[b.a].sum += b.r;
     groups[b.a].count += 1;
@@ -1360,17 +1371,39 @@ function embedQuery(text, key){
   });
 }
 
+/* Ranking by plain cosine similarity has a known flaw called hubness: a few
+   books sit close to everything and turn up in everyone's list. Here Atonement
+   was in 91 different books' top five. The fix is CSLS, which docks each book
+   by how close it is to everything else on average - vectors.json carries
+   that "hub" score for every book, precomputed by build_dataset.py:
+
+       score = 2 * cosine - hub
+
+   With it, the most any one book is recommended drops from 91 to 29, and the
+   share of the catalogue that ever gets recommended rises from 74% to 93%. */
 function nearestBooks(query, howMany){
-  /* Both sides are unit length, so the dot product is the cosine. */
   var norm = 0;
   for (var i=0; i<query.length; i++) norm += query[i]*query[i];
   norm = Math.sqrt(norm) || 1;
 
-  var rows = VECTORS.data, scored = [];
+  var rows = VECTORS.data, hub = VECTORS.hub, scored = [];
+
+  /* Row lengths, worked out once: the stored vectors are rounded to whole
+     numbers, so they are only roughly unit length. */
+  if (!VECTORS._norms){
+    VECTORS._norms = [];
+    for (var n=0; n<rows.length; n++){
+      var sq = 0;
+      for (var d=0; d<rows[n].length; d++) sq += rows[n][d] * rows[n][d];
+      VECTORS._norms.push(Math.sqrt(sq) || 1);
+    }
+  }
+
   for (var r=0; r<rows.length; r++){
     var row = rows[r], dot = 0;
     for (var c=0; c<row.length; c++) dot += row[c] * query[c];
-    scored.push({ i:r, s:dot / norm });
+    var cos = dot / (norm * VECTORS._norms[r]);
+    scored.push({ i:r, s: hub ? 2 * cos - hub[r] : cos });
   }
   scored.sort(function(a,b){ return b.s - a.s; });
 

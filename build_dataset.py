@@ -32,6 +32,10 @@ RUNNING IT
     python build_dataset.py                      # scan everything
     python build_dataset.py --scan-limit 100000  # a quick trial first
     python build_dataset.py --no-vectors         # skip the Gemini stage
+    python build_dataset.py --refresh-famous     # re-fetch the Wikidata must-include list
+
+    The export always includes the best-known novels, taken from Wikidata (CC0)
+    and cached in famous_novels.json - see STAGE 1b.
 
     A GOOGLE_API_KEY is needed ONLY for the last stage, which embeds the few
     thousand exported books so the app can do semantic search in the browser.
@@ -46,6 +50,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -70,6 +75,15 @@ GEMINI_BATCH = 50
 GEMINI_PAUSE = 0.6      # seconds between calls, to stay inside the free tier
 
 CHROMA_BATCH = 5000     # Chroma refuses much larger single adds
+
+# The must-include list: well-known novels the export guarantees a place, so the
+# books people type first are actually there. Fetched from Wikidata (CC0) once
+# and cached in this file, which is committed, so builds are repeatable.
+FAMOUS_FILE = "famous_novels.json"
+FAMOUS_MISSING_FILE = "famous_missing.txt"   # diagnostics, gitignored
+WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
+# Wikimedia asks every automated client to identify itself.
+USER_AGENT = "BrevisDatasetBuilder/1.0 (https://github.com/kaivalya25/Brevis)"
 
 # The moods, and the sentence each one is matched against in vector space.
 # The tags on the left are the same strings index.html uses in every book's g[].
@@ -218,6 +232,10 @@ TITLE_JUNK = re.compile(
     r"|\b(trilogy|quartet|quintet|duology|tetralogy)\b"
     # "The New Annotated Sherlock Holmes: The Complete Short Stories"
     r"|\bannotated\b"
+    # "Remembrance of Things Past: Vol 2", "The Odyssey: + 7 Free Bonus works"
+    r"|\bvol(ume)?\.?\s*(\d+|[ivx]+)\b"
+    r"|\bbonus (works|stories|novels|books|content|material)\b"
+    r"|\bnovel-ties\b"
     r"|\bcomplete\b.{0,20}\b(short stories|stories|works|tales)\b"
     r"|\bpart\s+(one|two|three|four|1|2|3|4)\b"
     r"|\bbooks?\s*\d+\s*[-–]\s*\d+\b"
@@ -347,6 +365,190 @@ def read_local(scan_limit):
 
 
 # ---------------------------------------------------------------------------
+# STAGE 1b - THE MUST-INCLUDE LIST
+#
+# The recommendation score ranks books by reader ratings, and the export keeps
+# whole authors with three or more books. Both are sensible, and between them
+# they quietly dropped Gone Girl, Pride and Prejudice, The Hunger Games and
+# Outlander - the very books a new reader types first.
+#
+# So a second, independent signal of fame: Wikidata, the structured-data
+# sibling of Wikipedia, released under CC0. Every novel there carries a count
+# of how many language editions of Wikipedia have an article about it. A novel
+# written up in forty languages is famous in a way a rating cannot measure.
+# The most-covered novels become a list the export must include.
+#
+# Wikidata marks a novel with "form of creative work" (P7937) = novel (Q8261).
+# "Instance of novel" and "genre: novel" look like they should work and return
+# nothing at all; P7937 found every one of a test set of thirteen famous books.
+# ---------------------------------------------------------------------------
+
+FAMOUS_QUERY = """
+SELECT ?book ?title ?links
+       (SAMPLE(?authorName) AS ?author)
+       (MIN(YEAR(?date)) AS ?year)
+       (GROUP_CONCAT(DISTINCT ?alias; separator="|") AS ?aliases)
+WHERE {
+  ?book wdt:P7937 wd:Q8261 ;
+        wikibase:sitelinks ?links .
+  FILTER(?links >= %d)
+  ?book rdfs:label ?title . FILTER(LANG(?title) = "en")
+  ?book wdt:P50 ?a . ?a rdfs:label ?authorName . FILTER(LANG(?authorName) = "en")
+  OPTIONAL { ?book wdt:P577 ?date }
+  OPTIONAL { ?book skos:altLabel ?alias . FILTER(LANG(?alias) = "en") }
+}
+GROUP BY ?book ?title ?links
+ORDER BY DESC(?links)
+LIMIT %d
+"""
+
+
+def fetch_famous(limit, min_links=8):
+    """Ask Wikidata for the `limit` most widely covered novels."""
+    query = FAMOUS_QUERY % (min_links, limit)
+    url = WIKIDATA_SPARQL + "?format=json&query=" + urllib.parse.quote(query)
+    req = urllib.request.Request(url, headers={
+        "User-Agent": USER_AGENT,
+        "Accept": "application/sparql-results+json",
+    })
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        rows = json.load(resp)["results"]["bindings"]
+
+    famous = []
+    for r in rows:
+        aliases = [a for a in r.get("aliases", {}).get("value", "").split("|") if a]
+        famous.append({
+            "id": r["book"]["value"].rsplit("/", 1)[-1],      # e.g. Q170583
+            "t": r["title"]["value"],
+            "a": r["author"]["value"],
+            "y": int(r["year"]["value"]) if r.get("year") else 0,
+            "links": int(r["links"]["value"]),
+            "aka": aliases[:20],                               # US/UK titles and the like
+        })
+    return famous
+
+
+def load_famous(limit, refresh):
+    """The cached list if there is one, otherwise a fresh fetch, saved."""
+    if os.path.exists(FAMOUS_FILE) and not refresh:
+        with open(FAMOUS_FILE, encoding="utf-8") as fh:
+            famous = json.load(fh)
+        print("  %d famous novels from %s (--refresh-famous to re-fetch)."
+              % (len(famous), FAMOUS_FILE))
+        return famous[:limit]
+
+    print("  asking Wikidata for the %d most widely covered novels ..." % limit)
+    famous = fetch_famous(limit)
+    with open(FAMOUS_FILE, "w", encoding="utf-8") as fh:
+        json.dump(famous, fh, ensure_ascii=False, indent=1)
+    print("  saved %d to %s." % (len(famous), FAMOUS_FILE))
+    return famous
+
+
+# Matching a Wikidata title to a Goodreads record. The two disagree in small,
+# predictable ways - "Mistborn: The Final Empire" against "The Final Empire",
+# "The Hunger Games (The Hunger Games, #1)", "J. R. R. Tolkien" against
+# "J.R.R. Tolkien" - so each title is reduced to a handful of plain variants and
+# paired with the author's surname, which both sources agree on far more often
+# than they agree on full names.
+
+def norm_key(text):
+    text = unicodedata.normalize("NFD", str(text or "")).encode("ascii", "ignore").decode()
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
+
+
+def _keys(text):
+    """A title as plain keys, with and without a leading article."""
+    k = norm_key(text)
+    out = set()
+    if len(k) >= 3:
+        out.add(k)
+        for article in ("the ", "a ", "an "):
+            if k.startswith(article) and len(k) > len(article) + 2:
+                out.add(k[len(article):])
+    return out
+
+
+def title_variants(title):
+    """(whole-title keys, part-title keys). The parts are either side of a
+    colon or semicolon: "Mistborn: The Final Empire" is also "The Final
+    Empire", and Wikidata's "Frankenstein; or, The Modern Prometheus" is also
+    plain "Frankenstein"."""
+    base = re.sub(r"\([^)]*\)", " ", title)            # drop "(Series, #1)"
+    whole = _keys(base)
+    parts = set()
+    if ":" in base or ";" in base:
+        head, tail = re.split(r"[:;]", base, 1)
+        parts = (_keys(head) | _keys(tail)) - whole
+    return whole, parts
+
+
+def surname(author):
+    parts = norm_key(author).split()
+    return parts[-1] if parts else ""
+
+
+def initial(author):
+    k = norm_key(author)
+    return k[:1]
+
+
+def build_famous_index(famous):
+    """(title key, author surname) -> position in the famous list. Every
+    variant of every Wikidata title and alias goes in, colon-parts included,
+    because Wikidata's "Mistborn: The Final Empire" has to find a dump record
+    called plain "The Final Empire"."""
+    index = {}
+    for i, f in enumerate(famous):
+        last = surname(f["a"])
+        for title in [f["t"]] + f.get("aka", []):
+            whole, parts = title_variants(title)
+            for v in whole | parts:
+                index.setdefault((v, last), i)        # earlier = more famous, wins ties
+    return index
+
+
+COMPANION_RE = re.compile(r"^(.{3,60}?)'s\s+(.+)$")
+
+
+def is_companion(rec, index, famous):
+    """"Harper Lee's To Kill a Mockingbird" by Harold Bloom is a study guide,
+    not the novel. The tell: the title is a famous author's name, a possessive,
+    then that author's famous title - and the book is by somebody else."""
+    m = COMPANION_RE.match(rec["t"].replace("\u2019", "'"))
+    if not m:
+        return False
+    owner, rest = m.group(1), m.group(2)
+    whole, _ = title_variants(rest)
+    for v in whole:
+        hit = index.get((v, surname(owner)))
+        if hit is not None and surname(famous[hit]["a"]) != surname(rec["a"]):
+            return True
+    return False
+
+
+def match_famous(rec, index, famous):
+    """(position, quality) for a dump record, or (None, 0).
+
+    Quality 2: the record's whole title matched. Quality 1: only part of it
+    did - "The Hobbit: The Desolation of Smaug" against The Hobbit. A part-match
+    is how merchandise sneaks in, so a whole-title match always beats one,
+    however many ratings the merchandise has.
+
+    Surnames alone are not enough either - Brian Herbert's "Dune: Red Plague"
+    is not Frank Herbert's Dune - so first initials have to agree too.
+    """
+    last, first = surname(rec["a"]), initial(rec["a"])
+    whole, parts = title_variants(rec["t"])
+    for quality, keys in ((2, whole), (1, parts)):
+        for v in keys:
+            hit = index.get((v, last))
+            if hit is not None and initial(famous[hit]["a"]) == first:
+                return hit, quality
+    return None, 0
+
+
+# ---------------------------------------------------------------------------
 # STAGE 2 - THE RECOMMENDATION SCORE
 #
 # A raw average is a bad ranking: an obscure book with nine five-star ratings
@@ -370,13 +572,17 @@ def score_book(rating, votes, mean_rating):
     return (votes / (votes + PRIOR_VOTES)) * rating + (PRIOR_VOTES / (votes + PRIOR_VOTES)) * mean_rating
 
 
-def scan(records, shortlist_size):
-    """Read every record; keep only the best `shortlist_size` of them.
+def scan(records, shortlist_size, famous_index=None, famous=None):
+    """Read every record; keep only the best `shortlist_size` of them, plus the
+    best English edition of every must-include novel.
 
     A heap holds the running best, so memory stays flat no matter how many
-    millions of rows go past.
+    millions of rows go past. Must-include novels are kept beside the heap
+    rather than in it: they skip the vote threshold and the competition for a
+    shortlist place, because their fame was established another way.
     """
     heap = []           # min-heap of (score, tiebreak, record)
+    famous_hits = {}    # famous-list position -> best record seen so far
     tiebreak = 0
     total = 0
     usable = 0
@@ -399,6 +605,22 @@ def scan(records, shortlist_size):
 
         if not rec["t"] or not rec["a"]:
             continue
+
+        # A must-include novel needs only a real English blurb and a rating.
+        # Of all its editions, keep the one most people rated - that is the
+        # edition people mean.
+        if famous_index and is_companion(rec, famous_index, famous):
+            continue
+
+        if famous_index:
+            fid, quality = match_famous(rec, famous_index, famous)
+            if (fid is not None and 0 < rec["r"] <= 5 and len(rec["d"]) >= MIN_DESC
+                    and is_single_story(rec["t"], rec["d"]) and looks_english(rec["d"])):
+                rec["_q"] = quality
+                best = famous_hits.get(fid)
+                if best is None or (quality, rec["n"]) > (best["_q"], best["n"]):
+                    famous_hits[fid] = rec
+
         if rec["n"] < MIN_VOTES or not (0 < rec["r"] <= 5):
             continue
         if len(rec["d"]) < MIN_DESC:
@@ -425,10 +647,20 @@ def scan(records, shortlist_size):
 
     # Rescore the shortlist with the final mean, now that we know it.
     books = [rec for _, _, rec in heap]
+
+    # Add the must-include novels. One may already be in the heap - the same
+    # record object - so check identity rather than adding it twice.
+    in_heap = {id(b) for b in books}
+    for fid, rec in famous_hits.items():
+        rec["must"] = fid
+        if id(rec) not in in_heap:
+            books.append(rec)
+    print("  must-include novels found: %d" % len(famous_hits))
+
     for b in books:
         b["score"] = score_book(b["r"], b["n"], mean_rating)
     books.sort(key=lambda b: -b["score"])
-    return books
+    return books, famous_hits
 
 
 # ---------------------------------------------------------------------------
@@ -486,9 +718,6 @@ def top_up_authors(col, books, min_per_author):
     mood sentences, just asked the other way round - which mood is closest to
     this book, rather than which books are closest to this mood.
     """
-    import numpy as np
-    from chromadb.utils import embedding_functions
-
     by_author = {}
     for b in books:
         by_author.setdefault(b["a"], []).append(b)
@@ -503,6 +732,15 @@ def top_up_authors(col, books, min_per_author):
         print("  no authors needed topping up.")
         return
 
+    give_nearest_mood(col, need)
+    print("  topped up %d books so their authors stay reachable." % len(need))
+
+
+def give_nearest_mood(col, need):
+    """Tag each book with the one mood its blurb sits nearest to."""
+    import numpy as np
+    from chromadb.utils import embedding_functions
+
     mood_tags = list(MOODS.keys())
     ef = embedding_functions.DefaultEmbeddingFunction()
     mvec = np.array(ef(list(MOODS.values())), dtype="float32")
@@ -516,15 +754,17 @@ def top_up_authors(col, books, min_per_author):
     for b in need:
         b["g"] = [mood_tags[int(np.argmax(mvec @ vecs[order[b["_row"]]]))]]
 
-    print("  topped up %d books so their authors stay reachable." % len(need))
-
 
 # ---------------------------------------------------------------------------
 # STAGE 4 - CHOOSING WHAT SHIPS
 #
-# Only books that landed in at least one mood are worth shipping. On top of
-# that the app has one structural requirement: every author it shows must have
-# at least three books, or tapping that author leads to a dead end.
+# Must-include novels go in first, unconditionally. Then the rest is filled by
+# whole authors, best first, as before: only authors with at least three books,
+# because the app's mood -> author -> book ladder must never dead-end.
+#
+# That rule does not bind the must-include novels. To Kill a Mockingbird stays
+# in even though Harper Lee wrote two novels; the app keeps such authors off the
+# mood ladder but finds them through "More like this" and search.
 # ---------------------------------------------------------------------------
 
 def choose(books, export_max, min_per_author, max_per_author):
@@ -532,9 +772,10 @@ def choose(books, export_max, min_per_author, max_per_author):
     print("  %d books picked up at least one mood." % len(tagged))
 
     # Drop exact duplicates - the dump has many editions of the same title.
+    # A must-include edition wins over any other edition of the same book.
     seen = set()
     unique = []
-    for b in sorted(tagged, key=lambda b: -b["score"]):
+    for b in sorted(tagged, key=lambda b: ("must" not in b, -b["score"])):
         key = (b["t"].lower(), b["a"].lower())
         if key in seen:
             continue
@@ -555,14 +796,27 @@ def choose(books, export_max, min_per_author, max_per_author):
     )
     print("  %d authors have %d or more books." % (len(ranked), min_per_author))
 
+    # Must-include first, most famous first, in case even they exceed the cap.
+    must = sorted((b for b in unique if "must" in b), key=lambda b: b["must"])
+    out = must[:export_max]
+    taken = {id(b) for b in out}
+    per_author = {}
+    for b in out:
+        per_author[b["a"]] = per_author.get(b["a"], 0) + 1
+    print("  %d must-include novels guaranteed a place." % len(out))
+
     # The app never shows more than five books by one author, so letting a
     # prolific series writer take twenty slots just crowds other authors out.
-    out = []
+    # Must-include books count toward that cap.
     for group in ranked:
-        best = sorted(group, key=lambda b: -b["score"])[:max_per_author]
-        if len(out) + len(best) > export_max:
+        room = max_per_author - per_author.get(group[0]["a"], 0)
+        best = [b for b in sorted(group, key=lambda b: -b["score"])
+                if id(b) not in taken][:max(room, 0)]
+        if not best or len(out) + len(best) > export_max:
             continue
         out.extend(best)
+        taken.update(id(b) for b in best)
+        per_author[group[0]["a"]] = per_author.get(group[0]["a"], 0) + len(best)
     print("  exporting %d books by %d authors."
           % (len(out), len({b["a"] for b in out})))
     return out
@@ -670,7 +924,41 @@ def build_vectors(chosen, out_path):
             "data": [row.tolist() for row in q],
         }, fh, separators=(",", ":"))
     print("  wrote %s" % out_path)
+    add_hub_scores(out_path)
     return True
+
+
+HUB_K = 25
+
+
+def add_hub_scores(path, k=HUB_K):
+    """Add a CSLS "hub" score per book to vectors.json.
+
+    Plain cosine similarity suffers from hubness: a few vectors sit close to
+    everything and appear in almost every neighbour list - Atonement was in
+    91 books' top five. CSLS docks each book by its mean similarity to its k
+    nearest neighbours, and the app ranks by 2*cosine - hub. Measured here:
+    the most any one book is recommended fell from 91 to 29, and the share of
+    the catalogue that ever gets recommended rose from 74% to 93%.
+
+    Worked out from the stored (rounded) vectors, so it matches exactly what
+    the browser compares.
+    """
+    import numpy as np
+
+    with open(path, encoding="utf-8") as fh:
+        v = json.load(fh)
+    x = np.array(v["data"], dtype="float32")
+    x /= (np.linalg.norm(x, axis=1, keepdims=True) + 1e-9)
+    sim = x @ x.T
+    np.fill_diagonal(sim, -1.0)
+    hub = np.sort(sim, axis=1)[:, -k:].mean(axis=1)
+
+    v["hub"] = [round(float(h), 4) for h in hub]
+    v["hub_k"] = k
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(v, fh, separators=(",", ":"))
+    print("  added hub scores (CSLS, k=%d) to %s" % (k, path))
 
 
 # ---------------------------------------------------------------------------
@@ -693,6 +981,12 @@ def main():
                     help="authors with fewer books than this are dropped")
     ap.add_argument("--max-per-author", type=int, default=6,
                     help="how many books one author may contribute")
+    ap.add_argument("--famous", type=int, default=1500,
+                    help="how many of Wikidata's most widely covered novels the "
+                         "export must include (0 to switch off)")
+    ap.add_argument("--refresh-famous", action="store_true",
+                    help="re-fetch the must-include list from Wikidata instead "
+                         "of using the cached famous_novels.json")
     ap.add_argument("--no-vectors", action="store_true",
                     help="skip the Gemini stage even if a key is set")
     ap.add_argument("--vectors-only", action="store_true",
@@ -720,8 +1014,14 @@ def main():
 
     records = read_hf(args.scan_limit) if args.source == "hf" else read_local(args.scan_limit)
 
+    famous, famous_index = [], None
+    if args.famous:
+        print("\n[0/5] The must-include list ...")
+        famous = load_famous(args.famous, args.refresh_famous)
+        famous_index = build_famous_index(famous)
+
     print("\n[1/5] Scanning the dump ...")
-    books = scan(records, args.shortlist)
+    books, famous_hits = scan(records, args.shortlist, famous_index, famous)
     if not books:
         sys.exit("Nothing survived the filters. Lower MIN_VOTES or MIN_DESC.")
     print("  shortlist: %d books, best score %.3f, worst %.3f"
@@ -736,12 +1036,19 @@ def main():
     print("\n[3/5] Retrieval by mood ...")
     tag_moods(col, books, args.per_mood)
     top_up_authors(col, books, args.min_per_author)
+    untagged = [b for b in books if "must" in b and not b.get("g")]
+    if untagged:
+        give_nearest_mood(col, untagged)
+        print("  gave %d must-include novels their nearest mood." % len(untagged))
 
     print("\n[4/5] Choosing what ships ...")
     chosen = choose(books, args.export, args.min_per_author, args.max_per_author)
     if not chosen:
         sys.exit("Nothing to export. Try a bigger --shortlist or --per-mood.")
     add_neighbours(col, chosen)
+
+    if famous:
+        report_famous(famous, famous_hits, chosen)
 
     print("\n[5/5] Writing files ...")
     out = []
@@ -767,6 +1074,20 @@ def main():
         build_vectors(chosen, args.vectors_out)
 
     print("\nDone. Put books.json (and vectors.json) next to index.html.")
+
+
+def report_famous(famous, famous_hits, chosen):
+    """How much of the must-include list made it, and which titles did not -
+    written to a file so the gaps can be looked at, and the list extended."""
+    shipped = {b["must"] for b in chosen if "must" in b}
+    missing = [f for i, f in enumerate(famous) if i not in famous_hits]
+    print("  must-include: %d of %d found in the dump, %d shipped."
+          % (len(famous_hits), len(famous), len(shipped)))
+    with open(FAMOUS_MISSING_FILE, "w", encoding="utf-8") as fh:
+        fh.write("# Famous novels with no usable English edition in the dump\n")
+        for f in missing:
+            fh.write("%s\t%s\t%d sitelinks\n" % (f["t"], f["a"], f["links"]))
+    print("  the %d not found are listed in %s." % (len(missing), FAMOUS_MISSING_FILE))
 
 
 def first_sentence(text):
