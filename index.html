@@ -693,8 +693,13 @@ const GENRES = [
 var VECTORS = null;     /* {dims, scale, data:[[int8,...]]} once loaded */
 var USING_FULL = false; /* true once books.json has replaced the seed */
 
+/* How many catalogue books each author has. Filled by indexBooks(). */
+var AUTHOR_BOOKS = {};
+
 function indexBooks(){
+  AUTHOR_BOOKS = {};
   for (var i=0; i<BOOKS.length; i++){
+    AUTHOR_BOOKS[BOOKS[i].a] = (AUTHOR_BOOKS[BOOKS[i].a] || 0) + 1;
     BOOKS[i]._i = i;
     BOOKS[i]._n = norm(BOOKS[i].t);    /* for "More like this" title matching */
     BOOKS[i]._na = norm(BOOKS[i].a);
@@ -815,6 +820,11 @@ function pickGenre(tag){
    author, average the ratings WITHIN THAT MOOD, then add a small nudge for
    having written several of them. The nudge stops one lucky 4.5 from
    outranking a writer with three strong books in the same mood.
+
+   Only authors with at least three books in the whole catalogue are ranked,
+   so tapping one never dead-ends. The catalogue also holds famous novels by
+   authors with fewer - To Kill a Mockingbird, say - and those are reached
+   through "More like this" and the search box instead.
    -------------------------------------------------------------------------- */
 
 function topAuthors(tag){
@@ -822,6 +832,7 @@ function topAuthors(tag){
   for (var i=0; i<BOOKS.length; i++){
     var b = BOOKS[i];
     if (b.g.indexOf(tag) === -1) continue;
+    if ((AUTHOR_BOOKS[b.a] || 0) < 3) continue;
     if (!groups[b.a]) groups[b.a] = { name:b.a, sum:0, count:0 };
     groups[b.a].sum += b.r;
     groups[b.a].count += 1;
