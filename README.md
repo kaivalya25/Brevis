@@ -253,6 +253,15 @@ Google retires model versions, and a pinned name starts returning 404 the day it
 happens. That is exactly how `gemini-2.0-flash` and `text-embedding-004` stopped
 working here mid-build.
 
+**When Google is busy.** The API answers "the model is overloaded" (503) or
+"rate limited" (429) from time to time. Every request retries twice, after 1s and
+then 2s. If writing still fails, it tries a backup model,
+`models/gemini-flash-lite-latest` (`FALLBACK_MODEL`). Free-tier limits are per
+model, so the backup often has room. Embedding has no backup, because the query
+vector has to come from the same model as the catalogue's vectors. A request
+that still fails says which step failed and quotes Google's reason. Only a
+rejected key prompts for a new one; anything else offers **Try again**.
+
 ---
 
 ## Using it

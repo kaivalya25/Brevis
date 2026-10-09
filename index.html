@@ -795,6 +795,11 @@ function keyForMissingBook(){
    always points at the current flash model. */
 var WRITER_MODEL = "models/gemini-flash-latest";
 
+/* Tried in turn if the main model keeps answering "overloaded" (HTTP 503) or
+   "rate limited" (429). Free-tier limits are per model, so a second model often
+   has room when the first does not. Also an alias, for the same reason. */
+var FALLBACK_MODEL = "models/gemini-flash-lite-latest";
+
 /* What the user has chosen so far. */
 var state = { genre:null, genreLabel:"", author:null, book:null, length:null, back:"books" };
 
@@ -1237,9 +1242,13 @@ function renderSummary(){
     if (state.book === book && state.length === want) body.innerHTML = paragraphs(text);
   }).catch(function(err){
     if (state.book !== book || state.length !== want) return;
+    /* Only a rejected key is worth replacing. A busy server just needs
+       another go. */
     body.innerHTML =
       '<p class="note">That could not be written. ' + esc(friendlyError(err)) + '</p>' +
-      keyPrompt("Try a different key:");
+      (isKeyError(err)
+        ? keyPrompt("Paste a different key:")
+        : '<div class="row"><button class="btn ghost" onclick="renderSummary()">Try again</button></div>');
   });
 }
 
@@ -1318,29 +1327,62 @@ function paragraphs(text){
 /* Turn whatever went wrong into one plain sentence. Never a stack trace. */
 function friendlyError(err){
   var m = (err && err.message) ? err.message : String(err);
-  if (/\b401\b|\b403\b|API key/i.test(m)) return "The key was rejected - check it in settings.";
-  if (/\b429\b|quota/i.test(m))          return "Google is rate-limiting the free tier. Try again in a minute.";
-  if (/\b40[0-9]\b/.test(m))             return "Google refused the request: " + m;
-  if (/\b5[0-9][0-9]\b/.test(m))         return "Google had a server error. Try again shortly.";
+  if (isKeyError(err))                     return "Google rejected the key (" + m + ").";
+  if (/\b429\b|quota/i.test(m))          return "The free-tier limit has been reached, even after retrying (" + m + "). Try again in a minute.";
+  if (/\b40[0-9]\b/.test(m))             return "Google refused the request (" + m + ").";
+  if (/\b5[0-9][0-9]\b/.test(m))         return "Google's servers were busy, even after retrying (" + m + "). Try again in a minute.";
   if (/Failed to fetch|NetworkError|Load failed/i.test(m))
     return "No network connection reached Google.";
   return m;
 }
 
-function askGemini(prompt, key){
-  var url = "https://generativelanguage.googleapis.com/v1beta/" + WRITER_MODEL +
-            ":generateContent?key=" + encodeURIComponent(key);
+/* A bad key, as opposed to a busy server: worth offering to replace it. */
+function isKeyError(err){
+  var m = (err && err.message) ? err.message : String(err);
+  return /\b401\b|\b403\b|API.key/i.test(m);
+}
 
+/* One POST to Gemini. Google's servers answer "overloaded" (503) or "rate
+   limited" (429) from time to time, and those usually clear within seconds,
+   so they are retried twice with a growing pause - 1s, then 2s - before
+   giving up. Anything else (a bad key, a bad request) fails at once, because
+   asking again would not change the answer.
+
+   The error carries Google's own explanation and the HTTP status, so a
+   failure shown to the reader says what actually went wrong. */
+var RETRIES = 2;
+
+function retryable(status){ return status === 429 || status >= 500; }
+
+function postGemini(url, body, attempt){
+  attempt = attempt || 0;
   return fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [ { parts: [ { text: prompt } ] } ],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 3000 }
-    })
+    body: JSON.stringify(body)
   }).then(function(res){
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    return res.json();
+    if (res.ok) return res.json();
+    return res.json().catch(function(){ return {}; }).then(function(data){
+      var reason = (data && data.error && data.error.message) || "";
+      var err = new Error("HTTP " + res.status + (reason ? " - " + reason : ""));
+      err.status = res.status;
+      if (retryable(res.status) && attempt < RETRIES){
+        return new Promise(function(done){ setTimeout(done, 1000 * Math.pow(2, attempt)); })
+          .then(function(){ return postGemini(url, body, attempt + 1); });
+      }
+      throw err;
+    });
+  });
+}
+
+function askGemini(prompt, key, model){
+  model = model || WRITER_MODEL;
+  var url = "https://generativelanguage.googleapis.com/v1beta/" + model +
+            ":generateContent?key=" + encodeURIComponent(key);
+
+  return postGemini(url, {
+    contents: [ { parts: [ { text: prompt } ] } ],
+    generationConfig: { temperature: 0.4, maxOutputTokens: 3000 }
   }).then(function(data){
     var cand = data && data.candidates && data.candidates[0];
     var parts = cand && cand.content && cand.content.parts;
@@ -1349,6 +1391,13 @@ function askGemini(prompt, key){
     for (var i=0; i<parts.length; i++) if (parts[i].text) out += parts[i].text;
     if (!out.trim()) throw new Error("Gemini returned no text.");
     return out.trim();
+  }).catch(function(err){
+    /* Still overloaded after the retries: try the fallback model once. This
+       comes after the text is pulled out, so either way the caller gets text. */
+    if (model !== FALLBACK_MODEL && err.status && retryable(err.status)){
+      return askGemini(prompt, key, FALLBACK_MODEL);
+    }
+    throw err;
   });
 }
 
@@ -1367,18 +1416,13 @@ function embedQuery(text, key){
   var url = "https://generativelanguage.googleapis.com/v1beta/" +
             VECTORS.model + ":embedContent?key=" + encodeURIComponent(key);
 
-  return fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: VECTORS.model,
-      content: { parts: [ { text: text } ] },
-      taskType: "RETRIEVAL_QUERY",
-      outputDimensionality: VECTORS.dims
-    })
-  }).then(function(res){
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    return res.json();
+  /* No fallback model here: the query vector must come from the same model
+     as the catalogue's vectors, or the comparison is meaningless. */
+  return postGemini(url, {
+    model: VECTORS.model,
+    content: { parts: [ { text: text } ] },
+    taskType: "RETRIEVAL_QUERY",
+    outputDimensionality: VECTORS.dims
   }).then(function(data){
     var v = data && data.embedding && data.embedding.values;
     if (!v || !v.length) throw new Error("No vector came back.");
@@ -1561,10 +1605,11 @@ function likeOutside(query){
   }
 
   out.innerHTML = '<p class="loading">Looking</p>';
-  var blurb = "";
+  var blurb = "", step = "describing the book";
   askGemini(describePrompt(query), key).then(function(text){
     blurb = text.trim();
     if (/^UNKNOWN\b/i.test(blurb)) throw new Error("UNKNOWN");
+    step = "matching it against the catalogue";
     return embedQuery(blurb, key);
   }).then(function(vec){
     var hits = nearestBooks(vec, 5);
@@ -1579,7 +1624,17 @@ function likeOutside(query){
         esc(query) + '&rdquo;. Check the spelling, or try the full title.</p>';
       return;
     }
-    out.innerHTML = '<p class="note">Could not search: ' + esc(friendlyError(err)) + '</p>';
+    /* A rejected key gets a box to paste a different one. There is no
+       settings screen, so without this a bad saved key could never be
+       replaced. */
+    if (isKeyError(err)){
+      out.innerHTML = '<p class="note">Could not search: ' + esc(friendlyError(err)) + '</p>' +
+        keyPrompt("Paste a different key:", function(){ likeOutside(query); });
+      return;
+    }
+    out.innerHTML = '<p class="note">Could not search while ' + step + ': ' +
+      esc(friendlyError(err)) + '</p>' +
+      '<div class="row"><button class="btn ghost" onclick="likeOutside(' + jsArg(query) + ')">Try again</button></div>';
   });
 }
 
