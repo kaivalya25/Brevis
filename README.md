@@ -140,10 +140,6 @@ ranks by `2 × cosine − hub`, which docks books for being close to everything:
 Measured over every book's top five, offline in numpy and again in the browser,
 with identical results. A lookup takes under a millisecond.
 
-The describe box at the bottom of the mood screen does the same search starting
-from your own words. Your phrase goes to Gemini's embedding model and is compared
-against every book's vector.
-
 ### More like this
 
 The first thing on the mood screen. Type a book you loved, pick it from the
@@ -160,7 +156,8 @@ matches, and get its five nearest neighbours.
   loved Sanderson tells them nothing; there's a link to the book itself instead.
 - **Free and instant** for anything in the catalogue. No key, no API call.
 
-**Books the catalogue doesn't have** fall back to Gemini, only when you tap.
+**Books the catalogue doesn't have** fall back to Gemini, only when you tap, using
+the shared key described under *The API key* so visitors aren't asked for one.
 Embedding a bare title doesn't work: *Gone Girl* landed next to a book called
 *Gone*, because a title is a few words with no meaning attached. So Gemini first
 writes a two-sentence blurb for the book, and that blurb is embedded instead.
@@ -195,21 +192,53 @@ always a tap, never automatic.
 
 ## The API key
 
-There is no settings screen. The first time you ask for a summary, the app asks
-for a Gemini key inline, stores it in your browser, and never asks again.
+There is no settings screen. Brevis uses two kinds of key, for two different jobs:
 
-**Why it can't just ship with one.** Brevis is a static page with no server. Any
-file the page can read, a visitor can read — so a key committed to this
-repository would be public, and a public Gemini key is scraped and abused within
-hours. There is nowhere on a static host to hide a secret. Each reader brings
-their own, and it stays on their device.
+| Job | Key used |
+|---|---|
+| **A book the catalogue doesn't have.** "Find books like…" in More like this, or "Ask about…" in author search | The **shared key** in `config.js`, so visitors aren't asked for anything. A visitor's own saved key takes priority if they have one. |
+| **Summaries of catalogue books** | The visitor's own key, asked for inline the first time and stored in their browser |
+| **Browsing**: moods, authors, More like this for catalogue books | None. No API call at all |
 
-Building the dataset is different, because that runs on your laptop:
+### The shared key
 
-|  | Where the key lives | Why |
+`config.js` sets `window.BREVIS_SHARED_KEY`, and `write_config.py` writes it from
+a key in your `.env`, so the key is never typed or pasted anywhere:
+
+```bash
+python write_config.py
+```
+
+It uses the first of `BREVIS_SHARED_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`
+that's set in `.env` (`--var NAME` picks a specific one), and it never prints the
+key. Then commit and push `config.js`. Without `config.js` the app still works;
+missing-book lookups just ask for a key instead.
+
+**This key is public.** Brevis is a static page with no server, so anything the
+page can read, a visitor can read, including `config.js`. Anyone could copy the
+key and spend its quota. So:
+
+- **Use a key from a free-tier Google project with no billing set up.** Then the
+  worst case is a used-up quota, never a bill.
+- **If lookups for missing books stop working**, the quota has probably been
+  used. Create a new key, put it in `.env`, re-run `write_config.py`, and push.
+- **GitHub scans public repos for Google keys** and may block the push or report
+  the key to Google, which can disable it.
+
+The fully safe alternative is a small proxy, such as a free Cloudflare Worker,
+that holds the key on a server so visitors never see it. That would be the first
+part of Brevis that needs a server.
+
+### Building the dataset
+
+That runs on your laptop, so its key stays in `.env`, which is gitignored and
+never published:
+
+|  | Where the key lives | Visible to visitors? |
 |---|---|---|
-| **`build_dataset.py`** | `.env` on your machine | Runs locally. `.env` is gitignored. |
-| **The app** | Typed in once by each reader, kept in their browser | No server. A key in a static site is a public key. |
+| **`build_dataset.py`** | `.env` | No |
+| **Shared key for missing books** | `config.js`, from `.env` via `write_config.py` | **Yes** |
+| **A visitor's own key** | Their browser | No |
 
 Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 
@@ -224,6 +253,15 @@ Google retires model versions, and a pinned name starts returning 404 the day it
 happens. That is exactly how `gemini-2.0-flash` and `text-embedding-004` stopped
 working here mid-build.
 
+**When Google is busy.** The API answers "the model is overloaded" (503) or
+"rate limited" (429) from time to time. Every request retries twice, after 1s and
+then 2s. If writing still fails, it tries a backup model,
+`models/gemini-flash-lite-latest` (`FALLBACK_MODEL`). Free-tier limits are per
+model, so the backup often has room. Embedding has no backup, because the query
+vector has to come from the same model as the catalogue's vectors. A request
+that still fails says which step failed and quotes Google's reason. Only a
+rejected key prompts for a new one; anything else offers **Try again**.
+
 ---
 
 ## Using it
@@ -231,12 +269,15 @@ working here mid-build.
 1. Open the app in Safari.
 2. Type a book you loved for five like it, or pick a mood, an author, a book.
 3. Tap **Short** or **Long**. The first time, paste a Gemini key when asked.
+4. Typed a book Brevis doesn't have? Tap **Find books like…** and the shared key
+   finds its closest matches. No key needed.
 
 On an iPhone, Share → **Add to Home Screen** and it opens like an app.
 
-Without a key the catalogue still works completely — every mood, every author,
-every book, and the recommendations. Only the written summaries and
-out-of-catalogue lookups need one.
+Without a key of their own, a visitor can still browse everything — every mood,
+every author, every book, the recommendations — and look up books outside the
+catalogue through the shared key. Only summaries of catalogue books need their
+own key.
 
 ---
 
