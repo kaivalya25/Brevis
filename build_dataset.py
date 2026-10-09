@@ -38,7 +38,9 @@ RUNNING IT
     and cached in famous_novels.json - see STAGE 1b.
 
     A GOOGLE_API_KEY is needed ONLY for the last stage, which embeds the few
-    thousand exported books so the app can do semantic search in the browser.
+    thousand exported books. Those vectors are the retrieval half of the app's
+    RAG recommender: it compares them in the browser to find candidates, then
+    Gemini chooses among them and explains its picks.
     Everything before that runs offline and free.
 """
 
@@ -824,9 +826,9 @@ def choose(books, export_max, min_per_author, max_per_author):
 
 def add_neighbours(col, chosen, how_many=6):
     """The recommendation half: for each exported book, its nearest neighbours
-    in vector space, minus anything by the same author. This is what powers
-    'if you liked this' on the summary screen, and it is also the retrieval
-    step the summary prompt is grounded in."""
+    in vector space, minus anything by the same author. The app uses these
+    only when vectors.json is missing; otherwise it compares the stronger
+    Gemini vectors directly."""
     import numpy as np
 
     print("Working out which books are like which ...")
@@ -852,10 +854,11 @@ def add_neighbours(col, chosen, how_many=6):
 # ---------------------------------------------------------------------------
 # STAGE 5 - VECTORS FOR THE BROWSER (optional, needs GOOGLE_API_KEY)
 #
-# The local model from stage 3 cannot run in a phone browser, so semantic
-# search in the app uses Gemini instead: the page embeds whatever the user
-# typed, and compares it against these vectors, which were made by the same
-# model at the same size. A few thousand books is around thirty API calls.
+# One Gemini embedding per exported book, stronger than the local model from
+# stage 3. This is the app's retrieval index: it compares them in the browser
+# to find candidates for a book - plain arithmetic, no API call - and embeds a
+# query with the same model only for books the catalogue does not have. A few
+# thousand books is around sixty API calls, here, once.
 # ---------------------------------------------------------------------------
 
 def build_vectors(chosen, out_path):
@@ -1060,8 +1063,8 @@ def main():
             "y": b["y"],
             "g": b["g"],
             "d": first_sentence(b["d"]),
-            "x": b["d"][:700],      # the retrieval snippet the summary is grounded in
-            "k": b["shelves"],      # reader shelf labels, more grounding
+            "x": b["d"][:700],      # the blurb, shown on the book's page
+            "k": b["shelves"],      # reader shelf labels, also shown there
             "s": b["s"],            # indices of similar books, for recommendations
         })
 

@@ -1,10 +1,12 @@
 """
 write_config.py - put a Gemini key from .env into config.js for the app.
 
-index.html loads config.js, which sets window.BREVIS_SHARED_KEY. The app uses
-that key ONLY for books the catalogue does not have: the "Find books like ..."
-fallback in More like this, and looking up a book or author it has never
-heard of. Everything else is untouched.
+index.html loads config.js, which sets window.BREVIS_SHARED_KEY. Visitors who
+have not saved a Gemini key of their own use this one for the generation step
+of More like this: choosing five of the retrieved books and saying what
+connects each, and describing books the catalogue does not have. A visitor's
+own key always takes priority. Without any key, the retrieved books are still
+shown, just without the reasons.
 
     python write_config.py                 # first of: BREVIS_SHARED_KEY,
                                            # GEMINI_API_KEY, GOOGLE_API_KEY
@@ -56,7 +58,7 @@ def main():
 
     with open("config.js", "w", encoding="utf-8") as fh:
         fh.write("/* Written by write_config.py from .env. This key is public - see the\n"
-                 "   note in write_config.py. Used only for books the catalogue lacks. */\n")
+                 "   note in write_config.py. */\n")
         fh.write("window.BREVIS_SHARED_KEY = %s;\n" % json.dumps(env[name]))
 
     print("Wrote config.js using %s from .env (the key itself is not shown)." % name)
