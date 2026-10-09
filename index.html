@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Brevis">
 <meta name="theme-color" content="#ffffff">
-<meta name="description" content="Pick a mood, pick an author, pick a book. Read the whole story in ten minutes.">
+<meta name="description" content="Loved a book? Brevis retrieves the closest novels by meaning and explains what connects each one.">
 <title>Brevis</title>
 
 <style>
@@ -157,8 +157,6 @@ h2{
 
 .sub{ color:var(--mute); font-size:14px; margin:0 0 28px; }
 
-hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
-
 /* ---------- Buttons ---------- */
 /* Every tappable thing is at least 44px tall - the Apple minimum target size. */
 .btn{
@@ -183,7 +181,7 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
 .btn.ghost{ background:transparent; color:var(--ink); }
 .btn.ghost:active{ background:var(--ink); color:var(--paper); }
 
-/* A card-style choice: genre tiles, author rows, book rows. */
+/* A card: a search result or a recommendation. */
 .card{
   display:block;
   width:100%;
@@ -204,10 +202,6 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
 .card .name{ font-family:var(--serif); font-size:21px; line-height:1.25; display:block; }
 .card .meta{ display:block; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--mute); margin-top:8px; }
 .card .hook{ display:block; font-size:14px; line-height:1.5; color:#5c5c57; margin-top:8px; }
-
-/* Genre grid - two columns, as specified. */
-.grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-.grid .card{ text-align:center; padding:26px 12px; font-family:var(--serif); font-size:19px; }
 
 /* A plain vertical stack of cards. */
 .stack{ display:grid; gap:10px; }
@@ -247,155 +241,116 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
 .field:focus{ outline:none; border-color:var(--ink); }
 .field::placeholder{ color:var(--mute); }
 
-.label{
-  display:block;
-  font-size:11px;
-  letter-spacing:.2em;
-  text-transform:uppercase;
-  color:var(--mute);
-  margin:0 0 10px;
-}
-
 .row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
-
-/* ---------- A book's blurb ---------- */
-.prose p{
-  font-family:var(--serif);
-  font-size:19px;
-  line-height:1.72;
-  margin:0 0 1.25em;
-}
-.prose p:last-child{ margin-bottom:0; }
-
-/* A quiet text link: "Or read about this book itself" under More like this. */
-.quiet{
-  display:inline-flex;
-  align-items:center;
-  min-height:44px;
-  background:none;
-  border:0;
-  padding:10px 2px;
-  color:var(--mute);
-  font-family:var(--sans);
-  font-size:12px;
-  letter-spacing:.14em;
-  text-transform:uppercase;
-  text-decoration:underline;
-  text-underline-offset:4px;
-  cursor:pointer;
-}
-.quiet:active{ color:var(--ink); }
 
 .empty{ color:var(--mute); font-size:14px; padding:4px 0; }
 
-/* The "if you liked this" strip under a book. */
-.recs{ margin-top:44px; padding-top:30px; border-top:1px solid var(--line); }
+/* The "five more like it" section under a book. */
+.recs{ margin-top:34px; padding-top:30px; border-top:1px solid var(--line); }
+
+/* Gemini's one-line reason a recommendation fits the book you loved. */
+.card .why{
+  display:block;
+  font-family:var(--serif);
+  font-style:italic;
+  font-size:16px;
+  line-height:1.5;
+  color:#3d3d39;
+  margin-top:10px;
+}
+
+/* The pale box used for notices and errors. */
+.note{
+  border:1px solid var(--line);
+  background:var(--tint);
+  padding:16px 18px;
+  font-size:14px;
+  line-height:1.55;
+  color:#5c5c57;
+  margin:22px 0 16px;
+}
+
+/* Three dots that breathe while Gemini works. */
+.loading{ color:var(--mute); font-size:13px; letter-spacing:.12em; text-transform:uppercase; margin:22px 0 0; }
+.loading::after{
+  content:"";
+  display:inline-block;
+  width:1.4em;
+  text-align:left;
+  animation:dots 1.4s steps(4,end) infinite;
+}
+@keyframes dots{ 0%{content:""} 25%{content:"."} 50%{content:".."} 75%{content:"..."} }
 </style>
 </head>
 
 <body>
 <div class="wrap">
 
-<!-- The app name, on every screen. -->
+<!-- The app name, on every screen. Tapping it goes home. -->
 <header class="masthead">
-  <button class="wordmark" onclick="go('welcome')" aria-label="Brevis - home">Brevis</button>
+  <button class="wordmark" onclick="goHome()" aria-label="Brevis - home">Brevis</button>
 </header>
 
 <!-- =====================================================================
-     SCREEN 1 - Welcome
+     SCREEN 1 - Home: type the book you loved
      ===================================================================== -->
-<section class="screen on" id="welcome">
-  <p class="eyebrow">Find your next book</p>
-  <h1>Worth your week,<br>or worth<br>skipping?</h1>
-  <p class="lede">Three thousand novels. Name one you loved and Brevis finds five that are genuinely alike, or start from a mood and work down to a book. Each comes with what it is about and what readers shelved it as, so you know what you are getting into before you start.</p>
-  <button class="btn" onclick="go('genre')">Begin</button>
-</section>
-
-<!-- =====================================================================
-     SCREEN 2 - Genre
-     ===================================================================== -->
-<section class="screen" id="genre">
-  <button class="back" onclick="go('welcome')">&larr; Back</button>
-  <p class="eyebrow">Find your next book</p>
-  <h2>More like a book you loved</h2>
+<section class="screen on" id="home">
+  <p class="eyebrow">More like this</p>
+  <h1>Loved a book?<br>Find five<br>more.</h1>
+  <p class="lede">Type a novel you loved. Brevis retrieves the closest of three thousand by what their blurbs are about, then Gemini picks the five you are most likely to love and says what connects each one &mdash; using only those books' own descriptions.</p>
   <div>
     <input class="field" id="likeBox" type="search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="Type a title you loved" aria-label="A book you loved">
     <div id="likeList" style="margin-top:10px"><!-- filled by JS --></div>
   </div>
-  <div>
-    <hr class="rule">
-    <p class="label">Or pick a mood</p>
-    <div class="grid" id="genreGrid"><!-- filled by JS --></div>
-  </div>
 </section>
 
 <!-- =====================================================================
-     SCREEN 3 - Author
+     SCREEN 2 - A book, and five more like it
      ===================================================================== -->
-<section class="screen" id="author">
-  <button class="back" onclick="go('genre')">&larr; Genres</button>
-  <p class="eyebrow" id="authorEyebrow">Step two</p>
-  <h2>The best five</h2>
-  <p class="sub" id="authorSub">Ranked by how their books in this mood are rated.</p>
-  <div class="stack" id="authorList"><!-- filled by JS --></div>
-  <div>
-    <hr class="rule">
-    <label class="label" for="searchBox">Or look for someone else</label>
-    <input class="field" id="searchBox" type="search" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" placeholder="Search every author">
-    <div class="stack" id="searchList" style="margin-top:10px"><!-- filled by JS --></div>
+<section class="screen" id="book">
+  <button class="back" onclick="goBack()">&larr; Back</button>
+  <p class="eyebrow">Because you loved</p>
+  <h2 id="bookTitle">Title</h2>
+  <p class="sub" id="bookMeta">Author</p>
+  <div id="bookAbout"><!-- filled by JS --></div>
+  <div class="recs">
+    <p class="eyebrow">Five more like it</p>
+    <div class="stack" id="recList"><!-- filled by JS --></div>
+    <div id="recNote"><!-- filled by JS --></div>
   </div>
+  <div class="row"><button class="btn ghost" onclick="goHome()">Start over</button></div>
 </section>
-
-<!-- =====================================================================
-     SCREEN 4 - Books
-     ===================================================================== -->
-<section class="screen" id="books">
-  <button class="back" onclick="go('author')">&larr; Authors</button>
-  <p class="eyebrow">Step three</p>
-  <h2 id="booksTitle">Books</h2>
-  <p class="sub">Choose one to read the whole story.</p>
-  <div class="stack" id="bookList"><!-- filled by JS --></div>
-</section>
-
-<!-- =====================================================================
-     SCREEN 5 - A book
-     ===================================================================== -->
-<section class="screen" id="summary">
-  <button class="back" onclick="go(state.back)">&larr; Back</button>
-  <p class="eyebrow">About the book</p>
-  <h2 id="summaryTitle">Title</h2>
-  <p class="sub" id="summaryMeta">Author</p>
-  <div id="summaryBody"><!-- filled by JS --></div>
-  <div id="recs"><!-- filled by JS --></div>
-  <div class="row">
-    <button class="btn ghost" onclick="go(state.back)">Back</button>
-    <button class="btn ghost" onclick="go('welcome')">Start over</button>
-  </div>
-</section>
-
 
 </div>
 
+<!-- Optional. Sets window.BREVIS_SHARED_KEY, a Gemini key for visitors who
+     have none of their own. Written by write_config.py from .env. -->
+<script src="config.js"></script>
 <script>
 /* ==========================================================================
-   BREVIS - all the logic lives here. Plain JavaScript, no libraries.
+   BREVIS - a RAG "More like this" book recommender. Plain JavaScript, no
+   libraries, no server.
+
+   How a recommendation is made:
+     1. RETRIEVE  the books whose blurbs are most alike, by comparing their
+                  vectors in the browser (section 5). No AI call.
+     2. AUGMENT   a prompt with those candidates' blurbs, moods and shelves
+                  (section 6).
+     3. GENERATE  Gemini picks the five best and says what connects each one.
+                  Its answer is checked: only real candidates survive.
+   Without a key, or if Gemini fails, step 1's books are shown on their own.
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   1. THE BOOK LIST
+   1. THE SEED LIST
 
-   WANT TO ADD OR CHANGE A BOOK?
-   Copy one of the lines below and edit it. The fields are:
+   A small built-in catalogue, so the app works from a file:// URL with
+   nothing else present. books.json replaces it when it is there.
+
+   WANT TO ADD OR CHANGE A BOOK? Copy a line and edit it. The fields are:
      t = title      a = author     r = average rating (out of 5)
-     y = year first published      g = list of mood tags (see GENRES below)
-     d = a one-line hook, shown under the title - and on the book's own
-         page too, when there is no longer blurb (x) to show
-
-   Two rules worth keeping:
-     - Give every author at least three books, or the author screen
-       dead-ends when you tap them.
-     - Give every mood at least eight books, or the top-five author
-       ranking for that mood stops meaning much.
+     y = year first published      g = mood tags
+     d = a one-line hook, shown under the title
    -------------------------------------------------------------------------- */
 
 var BOOKS = [
@@ -602,63 +557,35 @@ var BOOKS = [
 ];
 
 /* --------------------------------------------------------------------------
-   2. THE MOODS
+   2. THE FULL CATALOGUE
 
-   The tag on the left must match the strings used in the g:[] lists above.
-   The label on the right is what the button says. Add or rename freely.
+   The list above is the seed: built into this file so the app works from a
+   file:// URL with nothing else present. When build_dataset.py has been run,
+   books.json and vectors.json sit next to this file and are loaded instead:
+
+     books.json    a few thousand novels chosen out of 3.9 million, each with
+                   x = the first 700 characters of its real blurb
+                   k = what readers shelved it as
+                   s = its nearest neighbours, from the build's local model
+     vectors.json  one Gemini embedding per book (128 numbers, a byte each)
+                   plus a "hub" score per book, used to correct hubness
    -------------------------------------------------------------------------- */
 
-const GENRES = [
-  { tag:"cozy",        label:"Cozy" },
-  { tag:"thrilling",   label:"Thrilling" },
-  { tag:"romantic",    label:"Romantic" },
-  { tag:"sci-fi",      label:"Sci-fi" },
-  { tag:"fantasy",     label:"Fantasy" },
-  { tag:"melancholic", label:"Melancholic" },
-  { tag:"funny",       label:"Funny" },
-  { tag:"mind-bending",label:"Mind-bending" },
-  { tag:"historical",  label:"Historical" },
-  { tag:"dark",        label:"Dark" },
-  { tag:"classic",     label:"Classic" }
-];
-
-/* --------------------------------------------------------------------------
-   2b. THE BIGGER LIST
-
-   The list above is the seed: it is built into this file so the app works
-   from a file:// URL with nothing else present. When build_dataset.py has
-   been run and books.json is sitting next to this file, that is loaded
-   instead - a few thousand books chosen out of millions, each one carrying
-   two extra fields the seed does not have:
-
-       x = the first 700 characters of the real blurb, shown on the book's page
-       s = the positions of similar books, used for recommendations
-
-   vectors.json, if present, holds one small vector per book so the search
-   box on the mood screen can find books by meaning rather than by name.
-   -------------------------------------------------------------------------- */
-
-var VECTORS = null;     /* {dims, scale, data:[[int8,...]]} once loaded */
-var USING_FULL = false; /* true once books.json has replaced the seed */
-
-/* How many catalogue books each author has. Filled by indexBooks(). */
-var AUTHOR_BOOKS = {};
+var VECTORS = null;     /* {model, dims, data:[[int8,...]], hub:[...]} once loaded */
 
 function indexBooks(){
-  AUTHOR_BOOKS = {};
   for (var i=0; i<BOOKS.length; i++){
-    AUTHOR_BOOKS[BOOKS[i].a] = (AUTHOR_BOOKS[BOOKS[i].a] || 0) + 1;
     BOOKS[i]._i = i;
-    BOOKS[i]._n = norm(BOOKS[i].t);    /* for "More like this" title matching */
+    BOOKS[i]._n = norm(BOOKS[i].t);
     BOOKS[i]._na = norm(BOOKS[i].a);
-    BOOKS[i]._nx = " " + norm(BOOKS[i].x || BOOKS[i].d || "") + " ";   /* blurb, for series names */
+    BOOKS[i]._nx = " " + norm(BOOKS[i].x || BOOKS[i].d || "") + " ";
   }
 }
 
 /* Lower-case, accents off, punctuation to spaces: "Gödel, Escher" -> "godel escher". */
 function norm(s){
   return String(s).toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, " ").trim();
 }
 
@@ -671,10 +598,8 @@ function loadData(){
     }).then(function(rows){
       if (!rows || !rows.length) return;
       BOOKS = rows;
-      USING_FULL = true;
       indexBooks();
-      renderGenres();
-      renderLike();
+      renderSearch();
       return fetch("vectors.json");
     }).then(function(r){
       return (r && r.ok) ? r.json() : null;
@@ -700,103 +625,6 @@ function esc(s){
     .replace(/'/g,"&#39;");
 }
 
-/* Show one screen and hide the rest. That is the whole navigation system:
-   no router, no history, no URLs. */
-function go(id){
-  var screens = document.querySelectorAll(".screen");
-  for (var i=0; i<screens.length; i++) screens[i].classList.remove("on");
-  var next = document.getElementById(id);
-  if (next) next.classList.add("on");
-  window.scrollTo(0,0);
-}
-
-/* What the user has chosen so far. */
-var state = { genre:null, genreLabel:"", author:null, book:null, back:"books" };
-
-/* --------------------------------------------------------------------------
-   4. SCREEN 2 - the mood grid
-   -------------------------------------------------------------------------- */
-
-function renderGenres(){
-  var html = "";
-  for (var i=0; i<GENRES.length; i++){
-    var g = GENRES[i];
-    html += '<button class="card" onclick="pickGenre(\'' + esc(g.tag) + '\')">' + esc(g.label) + '</button>';
-  }
-  document.getElementById("genreGrid").innerHTML = html;
-}
-
-function pickGenre(tag){
-  state.genre = tag;
-  state.genreLabel = tag;
-  for (var i=0; i<GENRES.length; i++) if (GENRES[i].tag === tag) state.genreLabel = GENRES[i].label;
-  document.getElementById("authorEyebrow").textContent = state.genreLabel;
-  document.getElementById("authorSub").textContent =
-    "Ranked by how their " + state.genreLabel.toLowerCase() + " books are rated.";
-  document.getElementById("searchBox").value = "";
-  document.getElementById("searchList").innerHTML = "";
-  renderAuthors();
-  go("author");
-}
-
-/* --------------------------------------------------------------------------
-   5. SCREEN 3 - the top five authors, and the search box
-
-   Ranking: keep only the books tagged with the chosen mood, group them by
-   author, average the ratings WITHIN THAT MOOD, then add a small nudge for
-   having written several of them. The nudge stops one lucky 4.5 from
-   outranking a writer with three strong books in the same mood.
-
-   Only authors with at least three books in the whole catalogue are ranked,
-   so tapping one never dead-ends. The catalogue also holds famous novels by
-   authors with fewer - To Kill a Mockingbird, say - and those are reached
-   through "More like this" and the search box instead.
-   -------------------------------------------------------------------------- */
-
-function topAuthors(tag){
-  var groups = {};
-  for (var i=0; i<BOOKS.length; i++){
-    var b = BOOKS[i];
-    if (b.g.indexOf(tag) === -1) continue;
-    if ((AUTHOR_BOOKS[b.a] || 0) < 3) continue;
-    if (!groups[b.a]) groups[b.a] = { name:b.a, sum:0, count:0 };
-    groups[b.a].sum += b.r;
-    groups[b.a].count += 1;
-  }
-
-  var list = [];
-  for (var name in groups){
-    var g = groups[name];
-    var avg = g.sum / g.count;
-    list.push({
-      name:  g.name,
-      avg:   avg,
-      count: g.count,
-      score: avg + Math.min(g.count, 3) * 0.05   /* the consistency nudge */
-    });
-  }
-
-  list.sort(function(a,b){ return b.score - a.score; });
-  return list.slice(0, 5);
-}
-
-function renderAuthors(){
-  var list = topAuthors(state.genre);
-  var html = "";
-  for (var i=0; i<list.length; i++){
-    var a = list[i];
-    html += '<button class="card" onclick="pickAuthor(' + jsArg(a.name) + ')">' +
-              '<span class="name">' + esc(a.name) + '</span>' +
-              '<span class="meta">' + a.avg.toFixed(2) + ' average &middot; ' +
-                a.count + ' ' + (a.count === 1 ? 'book' : 'books') + ' in ' +
-                esc(state.genreLabel.toLowerCase()) +
-              '</span>' +
-            '</button>';
-  }
-  if (!html) html = '<p class="empty">No authors in this mood yet.</p>';
-  document.getElementById("authorList").innerHTML = html;
-}
-
 /* Quote a string so it is safe both as a JavaScript string and inside an
    onclick="..." attribute: escape it for JavaScript first, then for HTML. */
 function jsArg(s){
@@ -804,276 +632,46 @@ function jsArg(s){
   return "&quot;" + esc(js) + "&quot;";
 }
 
-/* The search looks at EVERY author in the list, not just the current mood,
-   so someone who came in through Cozy can still get to Cormac McCarthy. */
-function searchAuthors(query){
-  var q = query.trim().toLowerCase();
-  if (q.length < 2) return [];
+/* localStorage throws in Safari private browsing, so every call is wrapped.
+   Without it the app still works - a key or a cached answer just isn't kept. */
+var store = {
+  get: function(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+  set: function(k,v){ try { localStorage.setItem(k,v); return true; } catch(e){ return false; } }
+};
 
-  var groups = {};
-  for (var i=0; i<BOOKS.length; i++){
-    var b = BOOKS[i];
-    if (b.a.toLowerCase().indexOf(q) === -1) continue;
-    if (!groups[b.a]) groups[b.a] = { name:b.a, sum:0, count:0 };
-    groups[b.a].sum += b.r;
-    groups[b.a].count += 1;
-  }
+/* Two screens, and a trail of books for Back: each book opened from another
+   book's recommendations is pushed onto it. */
+var trail = [];
 
-  var list = [];
-  for (var name in groups){
-    var g = groups[name];
-    list.push({ name:g.name, avg:g.sum/g.count, count:g.count });
-  }
-  list.sort(function(a,b){ return b.avg - a.avg; });
-  return list.slice(0, 6);
+function show(id){
+  var screens = document.querySelectorAll(".screen");
+  for (var i=0; i<screens.length; i++) screens[i].classList.remove("on");
+  document.getElementById(id).classList.add("on");
+  window.scrollTo(0,0);
 }
 
-function renderSearch(){
-  var box = document.getElementById("searchBox");
-  var out = document.getElementById("searchList");
-  var q = box.value;
+function goHome(){
+  trail = [];
+  show("home");
+}
 
-  if (q.trim().length < 2){ out.innerHTML = ""; return; }
-
-  var list = searchAuthors(q);
-
-  if (!list.length){
-    out.innerHTML = '<p class="empty">Nobody in the catalogue by that name.</p>';
-    return;
-  }
-
-  var html = "";
-  for (var i=0; i<list.length; i++){
-    var a = list[i];
-    html += '<button class="card" onclick="pickAuthor(' + jsArg(a.name) + ')">' +
-              '<span class="name">' + esc(a.name) + '</span>' +
-              '<span class="meta">' + a.avg.toFixed(2) + ' average &middot; ' +
-                a.count + ' ' + (a.count === 1 ? 'book' : 'books') + '</span>' +
-            '</button>';
-  }
-  out.innerHTML = html;
+function goBack(){
+  trail.pop();                          /* the page we are leaving */
+  var prev = trail.pop();               /* the page before it - reopened below */
+  if (prev === undefined) return goHome();
+  if (typeof prev === "number") openBook(prev); else openOutside(prev);
 }
 
 /* --------------------------------------------------------------------------
-   6. SCREEN 4 - that author's books
+   4. FINDING THE BOOK YOU LOVED
 
-   Books tagged with the chosen mood come first, best rated first. If that
-   leaves fewer than three, the rest of the author's work is added underneath
-   so the screen is never a dead end. Never more than five.
+   Matching what the reader types to a book in the catalogue - plain text
+   matching, no AI. Best matches first: exact title, then title starting with
+   what was typed, then a word in the title starting with it, then anywhere in
+   the title, then every typed word starting some word of the title
+   ("way kings"), then the author. Ties go to the better-rated book.
    -------------------------------------------------------------------------- */
 
-function booksFor(author, tag){
-  var inMood = [], others = [];
-  for (var i=0; i<BOOKS.length; i++){
-    var b = BOOKS[i];
-    if (b.a !== author) continue;
-    if (tag && b.g.indexOf(tag) !== -1) inMood.push(b); else others.push(b);
-  }
-  var byRating = function(x,y){ return y.r - x.r; };
-  inMood.sort(byRating);
-  others.sort(byRating);
-
-  var list = inMood.slice(0);
-  if (list.length < 3) list = list.concat(others.slice(0, 3 - list.length));
-  return list.slice(0, 5);
-}
-
-function pickAuthor(name){
-  state.author = name;
-  document.getElementById("booksTitle").textContent = name;
-
-  var list = booksFor(name, state.genre);
-  document.getElementById("bookList").innerHTML =
-    bookCards(list) || '<p class="empty">No books listed for this author.</p>';
-
-  go("books");
-}
-
-/* One book card, used by the book list, the search results and the
-   recommendations under a book. */
-function bookCards(list){
-  var html = "";
-  for (var i=0; i<list.length; i++){
-    var b = list[i];
-    html += '<button class="card" onclick="pickBook(' + b._i + ')">' +
-              '<span class="name">' + esc(b.t) + '</span>' +
-              '<span class="meta">' + esc(b.a) + ' &middot; ' +
-                 b.r.toFixed(2) + (b.y ? ' &middot; ' + b.y : '') + '</span>' +
-              '<span class="hook">' + esc(b.d) + '</span>' +
-            '</button>';
-  }
-  return html;
-}
-
-/* --------------------------------------------------------------------------
-   7. SCREEN 5 - the book
-
-   Everything on this page comes from the local dataset: the publisher's
-   blurb, the moods and shelves, and the books nearest to this one. Nothing
-   is fetched, so it is instant and works offline.
-   -------------------------------------------------------------------------- */
-
-/* The blurb, as stored. books.json keeps the first 700 characters, so a long
-   one is cut back to its last full sentence rather than stopping mid-word. */
-function blurbOf(book){
-  var text = book.x || book.d || "";
-  if (book.x && book.x.length >= 700){
-    var end = Math.max(text.lastIndexOf(". "), text.lastIndexOf("! "), text.lastIndexOf("? "));
-    text = end > 200 ? text.slice(0, end + 1) : text + "\u2026";
-  }
-  return text;
-}
-
-function renderAbout(book){
-  var facts = [];
-  if (book.g && book.g.length) facts.push("Moods: " + book.g.join(", "));
-  if (book.k) facts.push("Shelved as: " + book.k);
-
-  document.getElementById("summaryBody").innerHTML =
-    '<div class="prose"><p>' + esc(blurbOf(book)) + '</p></div>' +
-    (facts.length ? '<p class="sub" style="margin:22px 0 0">' + esc(facts.join("  \u00b7  ")) + '</p>' : '');
-}
-
-/* The recommendation step, best source first:
-
-   1. The embedding vectors in vectors.json, made at build time. The book's own stored vector is
-      compared against every other book's - arithmetic on data already in the
-      page, so still no API call. These are by far the best neighbours.
-   2. The neighbours build_dataset.py precomputed into s[], from the small
-      local model. Used when vectors.json is missing (e.g. on file://).
-   3. The seed list has neither, so books sharing the most moods.
-
-   Books by the same author are left out: recommending more Sanderson to
-   someone who loved Sanderson tells them nothing. */
-function similarTo(book, howMany){
-  howMany = howMany || 4;
-  var out = [];
-
-  if (VECTORS && BOOKS[book._i] === book){
-    var ranked = nearestBooks(VECTORS.data[book._i], howMany * 4);
-    for (var v=0; v<ranked.length && out.length<howMany; v++){
-      if (ranked[v] !== book && ranked[v].a !== book.a) out.push(ranked[v]);
-    }
-    return out;
-  }
-
-  if (book.s && book.s.length){
-    for (var i=0; i<book.s.length && out.length<howMany; i++){
-      var b = BOOKS[book.s[i]];
-      if (b && b !== book) out.push(b);
-    }
-    return out;
-  }
-
-  var scored = [];
-  for (var j=0; j<BOOKS.length; j++){
-    var c = BOOKS[j];
-    if (c === book || c.a === book.a) continue;
-    var shared = 0;
-    for (var k=0; k<book.g.length; k++) if (c.g.indexOf(book.g[k]) !== -1) shared++;
-    if (shared) scored.push({ b:c, s:shared + c.r/10 });
-  }
-  scored.sort(function(x,y){ return y.s - x.s; });
-  for (var m=0; m<scored.length && m<howMany; m++) out.push(scored[m].b);
-  return out;
-}
-
-function renderRecs(book){
-  var near = similarTo(book);
-  var el = document.getElementById("recs");
-  if (!near.length){ el.innerHTML = ""; return; }
-  el.innerHTML = '<div class="recs"><p class="eyebrow">If you liked this</p>' +
-                 '<div class="stack">' + bookCards(near) + '</div></div>';
-}
-
-/* Which screen is showing - so Back on a book returns there, whether the
-   reader came from an author's list, "More like this" or a search. */
-function currentScreen(){
-  var on = document.querySelector(".screen.on");
-  return on ? on.id : "welcome";
-}
-
-function pickBook(index){
-  var book = BOOKS[index];
-  if (!book) return;
-  var here = currentScreen();
-  if (here !== "summary") state.back = here;   /* a recommendation keeps the old one */
-  state.book = book;
-
-  document.getElementById("summaryTitle").textContent = book.t;
-  document.getElementById("summaryMeta").textContent =
-    book.a + (book.y ? " · " + book.y : "") + " · " + book.r.toFixed(2);
-
-  go("summary");
-  renderAbout(book);
-  renderRecs(book);
-}
-
-/* --------------------------------------------------------------------------
-   8. NEAREST BOOKS
-
-   Every book has a vector in vectors.json, made offline by build_dataset.py
-   from its blurb. Books whose vectors point the same way are alike, so
-   finding similar books is arithmetic on data already in the page.
-   -------------------------------------------------------------------------- */
-
-/* Ranking by plain cosine similarity has a known flaw called hubness: a few
-   books sit close to everything and turn up in everyone's list. Here Atonement
-   was in 91 different books' top five. The fix is CSLS, which docks each book
-   by how close it is to everything else on average - vectors.json carries
-   that "hub" score for every book, precomputed by build_dataset.py:
-
-       score = 2 * cosine - hub
-
-   With it, the most any one book is recommended drops from 91 to 29, and the
-   share of the catalogue that ever gets recommended rises from 74% to 93%. */
-function nearestBooks(query, howMany){
-  var norm = 0;
-  for (var i=0; i<query.length; i++) norm += query[i]*query[i];
-  norm = Math.sqrt(norm) || 1;
-
-  var rows = VECTORS.data, hub = VECTORS.hub, scored = [];
-
-  /* Row lengths, worked out once: the stored vectors are rounded to whole
-     numbers, so they are only roughly unit length. */
-  if (!VECTORS._norms){
-    VECTORS._norms = [];
-    for (var n=0; n<rows.length; n++){
-      var sq = 0;
-      for (var d=0; d<rows[n].length; d++) sq += rows[n][d] * rows[n][d];
-      VECTORS._norms.push(Math.sqrt(sq) || 1);
-    }
-  }
-
-  for (var r=0; r<rows.length; r++){
-    var row = rows[r], dot = 0;
-    for (var c=0; c<row.length; c++) dot += row[c] * query[c];
-    var cos = dot / (norm * VECTORS._norms[r]);
-    scored.push({ i:r, s: hub ? 2 * cos - hub[r] : cos });
-  }
-  scored.sort(function(a,b){ return b.s - a.s; });
-
-  var out = [];
-  for (var k=0; k<scored.length && out.length<howMany; k++){
-    var b = BOOKS[scored[k].i];
-    if (b) out.push(b);
-  }
-  return out;
-}
-
-/* --------------------------------------------------------------------------
-   9. MORE LIKE THIS
-
-   Type a book you loved, pick it from the matches, and get the books that sit
-   nearest to it. Those neighbours were worked out offline by build_dataset.py
-   from the Chroma embeddings and ship inside books.json (each book's s field),
-   so this costs nothing: no API call, no key, no wait.
-   -------------------------------------------------------------------------- */
-
-/* Best matches first: exact title, then title starting with what was typed,
-   then a word in the title starting with it, then anywhere in the title, then
-   every typed word starting some word of the title ("way kings"), then the
-   author. Ties go to the better-rated book. */
 function matchTitles(query, howMany){
   var q = norm(query);
   if (q.length < 2) return [];
@@ -1095,10 +693,9 @@ function matchTitles(query, howMany){
 
 /* Books whose blurb mentions what was typed, as a whole phrase. Used only when
    no title or author matches, and shown as such - "these books mention it",
-   never as if they were the book itself. It finds series names the stored
-   titles leave out ("mistborn" -> The Final Empire), and books pitched at fans
-   of one the catalogue lacks ("for fans of The Hunger Games"). Whole words
-   only, because a common word like "love" turns up in hundreds of blurbs. */
+   never as if they were the book itself. Finds series names the stored titles
+   leave out ("mistborn" -> The Final Empire). Whole words only, because a
+   common word like "love" turns up in hundreds of blurbs. */
 function matchBlurbs(query, howMany){
   var q = norm(query);
   if (q.length < 4) return [];
@@ -1122,68 +719,591 @@ function wordsStart(words, text){
   return true;
 }
 
-/* As the reader types: the catalogue titles that match. */
-function renderLike(){
-  var q = document.getElementById("likeBox").value.trim();
-  var out = document.getElementById("likeList");
-
-  if (q.length < 2){ out.innerHTML = ""; return; }
-
-  var hits = matchTitles(q, 6), lead = "";
-  if (!hits.length){
-    hits = matchBlurbs(q, 6);
-    if (!hits.length){
-      out.innerHTML = '<p class="empty">That one is not in the catalogue. Try another ' +
-        'title, an author, or a series name.</p>';
-      return;
-    }
-    lead = '<p class="sub" style="margin:14px 0 12px">No title by that name. These books ' +
-      'mention <strong>' + esc(q) + '</strong>:</p>';
-  }
-
+function titleCards(list){
   var html = "";
-  for (var i=0; i<hits.length; i++){
-    var b = hits[i];
-    html += '<button class="card" onclick="showLike(' + b._i + ')">' +
+  for (var i=0; i<list.length; i++){
+    var b = list[i];
+    html += '<button class="card" onclick="trail=[];openBook(' + b._i + ')">' +
               '<span class="name">' + esc(b.t) + '</span>' +
               '<span class="meta">' + esc(b.a) + (b.y ? ' &middot; ' + b.y : '') + '</span>' +
             '</button>';
   }
-  out.innerHTML = lead + '<div class="stack">' + html + '</div>';
+  return html;
 }
 
-/* The reader picked their book: show its five nearest neighbours. */
-function showLike(index){
-  var book = BOOKS[index];
-  if (!book) return;
+/* As the reader types. If the book is not in the catalogue, the last option is
+   always to describe it and search by meaning instead. */
+function renderSearch(){
+  var box = document.getElementById("likeBox");
+  var out = document.getElementById("likeList");
+  var q = box.value.trim();
+  if (q.length < 2){ out.innerHTML = ""; return; }
 
-  document.getElementById("likeBox").value = book.t;   /* setting it does not fire "input" */
-  var near = similarTo(book, 5);
+  var hits = matchTitles(q, 6);
+  if (hits.length){ out.innerHTML = '<div class="stack">' + titleCards(hits) + '</div>'; return; }
 
-  document.getElementById("likeList").innerHTML =
-    '<p class="sub" style="margin:22px 0 14px">Because you loved <strong>' + esc(book.t) +
-      '</strong> by ' + esc(book.a) + ':</p>' +
-    '<div class="stack">' +
-      (bookCards(near) || '<p class="empty">Nothing close enough in the catalogue.</p>') +
-    '</div>' +
-    '<p style="margin:14px 0 0"><button class="quiet" onclick="pickBook(' + book._i + ')">' +
-      'Or read about ' + esc(book.t) + ' itself</button></p>';
+  var mentions = matchBlurbs(q, 4);
+  out.innerHTML =
+    (mentions.length
+      ? '<p class="sub" style="margin:14px 0 12px">No title by that name. These books mention ' +
+        '<strong>' + esc(q) + '</strong>:</p><div class="stack">' + titleCards(mentions) + '</div>'
+      : '<p class="empty">That one is not in the catalogue.</p>') +
+    '<div class="stack" style="margin-top:10px">' +
+      '<button class="card" onclick="trail=[];openOutside(' + jsArg(q) + ')">' +
+        '<span class="name">Find books like &ldquo;' + esc(q) + '&rdquo;</span>' +
+        '<span class="hook">Gemini describes it, and Brevis searches the catalogue by meaning.</span>' +
+      '</button>' +
+    '</div>';
 }
 
 /* --------------------------------------------------------------------------
-   10. START
+   5. RETRIEVAL - the R in RAG
+
+   Finding the candidates: the books whose blurbs are most alike. No AI call
+   for a catalogue book - every book's vector is already in vectors.json, so
+   this is arithmetic on data already in the page.
+
+   Ranking by plain cosine similarity has a known flaw called hubness: a few
+   books sit close to everything and turn up in everyone's list. Here Atonement
+   was in 91 different books' top five. CSLS docks each book by how close it is
+   to everything on average - its "hub" score, precomputed by the build:
+
+       score = 2 * cosine - hub
+
+   With it the most any one book is recommended drops from 91 to 29, and the
+   share of the catalogue that ever gets recommended rises from 74% to 93%.
+   -------------------------------------------------------------------------- */
+
+var POOL = 12;    /* how many candidates retrieval hands to the generator */
+var SHOW = 5;     /* how many recommendations the reader sees */
+
+function nearestBooks(query, howMany, exclude){
+  var norm2 = 0;
+  for (var i=0; i<query.length; i++) norm2 += query[i]*query[i];
+  norm2 = Math.sqrt(norm2) || 1;
+
+  var rows = VECTORS.data, hub = VECTORS.hub, scored = [];
+
+  /* Row lengths, worked out once: the stored vectors are rounded to whole
+     numbers, so they are only roughly unit length. */
+  if (!VECTORS._norms){
+    VECTORS._norms = [];
+    for (var n=0; n<rows.length; n++){
+      var sq = 0;
+      for (var d=0; d<rows[n].length; d++) sq += rows[n][d] * rows[n][d];
+      VECTORS._norms.push(Math.sqrt(sq) || 1);
+    }
+  }
+
+  for (var r=0; r<rows.length; r++){
+    var row = rows[r], dot = 0;
+    for (var c=0; c<row.length; c++) dot += row[c] * query[c];
+    var cos = dot / (norm2 * VECTORS._norms[r]);
+    scored.push({ i:r, s: hub ? 2 * cos - hub[r] : cos });
+  }
+  scored.sort(function(a,b){ return b.s - a.s; });
+
+  var out = [];
+  for (var k=0; k<scored.length && out.length<howMany; k++){
+    var b = BOOKS[scored[k].i];
+    if (b && !(exclude && exclude(b))) out.push(b);
+  }
+  return out;
+}
+
+/* The candidate pool for a catalogue book, best source first:
+     1. the Gemini vectors in vectors.json, with CSLS;
+     2. the neighbours the build precomputed into s[], from its local model;
+     3. on the seed list, which has neither, books sharing the most moods.
+   Books by the same author are left out: recommending more Sanderson to
+   someone who loved Sanderson tells them nothing. */
+function retrieve(book, howMany){
+  var notThis = function(b){ return b === book || b.a === book.a; };
+
+  if (VECTORS && BOOKS[book._i] === book){
+    return nearestBooks(VECTORS.data[book._i], howMany, notThis);
+  }
+
+  var out = [];
+  if (book.s && book.s.length){
+    for (var i=0; i<book.s.length && out.length<howMany; i++){
+      var b = BOOKS[book.s[i]];
+      if (b && !notThis(b)) out.push(b);
+    }
+    if (out.length) return out;
+  }
+
+  var scored = [];
+  for (var j=0; j<BOOKS.length; j++){
+    var c = BOOKS[j];
+    if (notThis(c)) continue;
+    var shared = 0;
+    for (var k=0; k<(book.g||[]).length; k++) if (c.g.indexOf(book.g[k]) !== -1) shared++;
+    if (shared) scored.push({ b:c, s:shared + c.r/10 });
+  }
+  return topOf(scored, howMany);
+}
+
+/* --------------------------------------------------------------------------
+   6. AUGMENTED GENERATION - the A and G in RAG
+
+   The retrieved candidates, with their blurbs, moods and shelves, go into the
+   prompt beside the book the reader loved. Gemini picks the five this reader
+   is most likely to love and says, for each, what connects them.
+
+   Three rules keep it honest:
+     - It may only choose from the numbered candidates. It answers with their
+       numbers, and anything that is not one of them is thrown away - so it
+       cannot recommend a book that is not in the catalogue.
+     - Its reasons may only use what the prompt gives it - the blurbs and
+       labels - not whatever else it remembers about these books.
+     - If anything goes wrong, or there is no key, the reader still gets the
+       five retrieved books, just without the reasons.
+   -------------------------------------------------------------------------- */
+
+/* The blurb, as stored. books.json keeps the first 700 characters, so a long
+   one is cut back to its last full sentence rather than stopping mid-word. */
+function blurbOf(book, limit){
+  var text = book.x || book.d || "";
+  limit = limit || 700;
+  if (text.length >= limit){
+    text = text.slice(0, limit);
+    var end = Math.max(text.lastIndexOf(". "), text.lastIndexOf("! "), text.lastIndexOf("? "));
+    text = end > limit / 3 ? text.slice(0, end + 1) : text + "…";
+  }
+  return text;
+}
+
+function describeForPrompt(book, limit){
+  var bits = [];
+  if (book.g && book.g.length) bits.push("Moods: " + book.g.join(", "));
+  if (book.k) bits.push("Shelved as: " + book.k);
+  bits.push("Blurb: " + blurbOf(book, limit));
+  return bits.join(". ");
+}
+
+function buildRecPrompt(loved, pool){
+  var cands = "";
+  for (var i=0; i<pool.length; i++){
+    var c = pool[i];
+    cands += "[" + (i + 1) + "] " + c.t + " - " + c.a + (c.y ? " (" + c.y + ")" : "") +
+             ". " + describeForPrompt(c, 320) + "\n";
+  }
+
+  return "You are the recommendation step of a book app. A reader loved this book:\n\n" +
+    "LOVED\n" +
+    "Title: " + loved.t + "\n" +
+    (loved.a ? "Author: " + loved.a + "\n" : "") +
+    describeForPrompt(loved, 700) + "\n\n" +
+    "These are the closest books in the catalogue, found by comparing what their " +
+    "blurbs are about. Choose from them only.\n\n" +
+    "CANDIDATES\n" + cands + "\n" +
+    "Pick the " + SHOW + " candidates this reader is most likely to love, best first. " +
+    "For each, write one sentence of at most 30 words saying what specifically " +
+    "connects it to the book they loved: a shared theme, setting, tone, structure " +
+    "or kind of character.\n\n" +
+    "Rules:\n" +
+    "- Use only what the blurbs and labels above say. Do not use anything else you " +
+    "know about these books.\n" +
+    "- Do not reveal anything about a plot beyond what its blurb says.\n" +
+    "- Do not mention the candidate numbers, the catalogue or these instructions " +
+    "in the sentences.\n\n" +
+    "Reply with JSON only, exactly in this shape:\n" +
+    '[{"id": 3, "why": "..."}, {"id": 7, "why": "..."}]\n' +
+    '"id" must be one of the candidate numbers above.';
+}
+
+/* Read Gemini's answer and keep only what can be trusted: ids that name a real
+   candidate, each used once, with a sentence attached. Returns
+   [{book, why}], filled up from retrieval order if fewer than SHOW survive. */
+function parseChoices(text, pool){
+  var picks = [], seen = {};
+  try {
+    var raw = String(text).replace(/```(json)?/g, "");
+    var a = raw.indexOf("["), b = raw.lastIndexOf("]");
+    var list = JSON.parse(raw.slice(a, b + 1));
+    for (var i=0; i<list.length && picks.length<SHOW; i++){
+      var id = parseInt(list[i] && list[i].id, 10);
+      var why = list[i] && typeof list[i].why === "string" ? list[i].why.trim() : "";
+      if (!(id >= 1 && id <= pool.length) || seen[id] || !why) continue;   /* not a candidate: dropped */
+      seen[id] = true;
+      picks.push({ book:pool[id - 1], why:why.slice(0, 300) });
+    }
+  } catch(e){ /* unreadable answer: fall through to retrieval order */ }
+
+  for (var j=0; j<pool.length && picks.length<SHOW; j++){
+    if (!seen[j + 1]){ seen[j + 1] = true; picks.push({ book:pool[j], why:null }); }
+  }
+  return picks;
+}
+
+/* Answers already worked out, so reopening a book costs nothing. Kept in the
+   browser between visits too, keyed by title and author so a rebuilt
+   catalogue cannot point an old answer at the wrong book. */
+var answers = {};
+var CACHE_PREFIX = "brevis_rag_v1:";
+
+function cacheKey(loved){ return CACHE_PREFIX + norm(loved.t) + "|" + norm(loved.a || ""); }
+
+function findBook(t, a){
+  for (var i=0; i<BOOKS.length; i++) if (BOOKS[i].t === t && BOOKS[i].a === a) return BOOKS[i];
+  return null;
+}
+
+function hasReasons(picks){
+  for (var i=0; i<picks.length; i++) if (picks[i].why) return true;
+  return false;
+}
+
+function saveAnswer(loved, picks){
+  answers[cacheKey(loved)] = picks;
+  var slim = [];
+  for (var i=0; i<picks.length; i++) slim.push({ t:picks[i].book.t, a:picks[i].book.a, why:picks[i].why });
+  store.set(cacheKey(loved), JSON.stringify(slim));
+}
+
+function loadAnswer(loved){
+  var key = cacheKey(loved);
+  if (answers[key]) return answers[key];
+  try {
+    var slim = JSON.parse(store.get(key) || "null");
+    if (!slim) return null;
+    var picks = [];
+    for (var i=0; i<slim.length; i++){
+      var b = findBook(slim[i].t, slim[i].a);
+      if (!b) return null;               /* catalogue changed: work it out afresh */
+      picks.push({ book:b, why:slim[i].why });
+    }
+    return (answers[key] = picks);
+  } catch(e){ return null; }
+}
+
+/* --------------------------------------------------------------------------
+   7. THE BOOK PAGE
+   -------------------------------------------------------------------------- */
+
+function recCards(picks){
+  var html = "";
+  for (var i=0; i<picks.length; i++){
+    var b = picks[i].book;
+    html += '<button class="card" onclick="openBook(' + b._i + ')">' +
+              '<span class="name">' + esc(b.t) + '</span>' +
+              '<span class="meta">' + esc(b.a) + (b.y ? ' &middot; ' + b.y : '') +
+                ' &middot; ' + b.r.toFixed(2) + '</span>' +
+              (picks[i].why ? '<span class="why">' + esc(picks[i].why) + '</span>'
+                            : '<span class="hook">' + esc(b.d) + '</span>') +
+            '</button>';
+  }
+  return html;
+}
+
+/* Every page opened gets a new number. A slow answer checks it on arrival and
+   is dropped if the reader has moved to another page in the meantime - going
+   back and forward can return the trail to the same length, so its length is
+   no guide. */
+var pageId = 0;
+
+function setPage(title, meta, about){
+  pageId++;
+  document.getElementById("bookTitle").textContent = title;
+  document.getElementById("bookMeta").textContent = meta;
+  document.getElementById("bookAbout").innerHTML = about;
+  document.getElementById("recList").innerHTML = "";
+  document.getElementById("recNote").innerHTML = "";
+  show("book");
+}
+
+/* A book in the catalogue. Retrieval shows five at once; the generation step
+   then replaces them with its own five, each with a reason. */
+function openBook(index){
+  var book = BOOKS[index];
+  if (!book) return;
+  trail.push(index);
+  document.getElementById("likeBox").value = "";
+  renderSearch();
+
+  setPage(book.t,
+          book.a + (book.y ? " · " + book.y : "") + " · " + book.r.toFixed(2),
+          '<p class="sub" style="margin:0">' + esc(book.d || "") + '</p>');
+
+  var pool = retrieve(book, POOL);
+  recommend(book, pool);
+}
+
+/* Show the retrieved books, then ask Gemini to choose and explain. */
+function recommend(loved, pool){
+  var list = document.getElementById("recList");
+  var note = document.getElementById("recNote");
+
+  if (!pool.length){
+    list.innerHTML = '<p class="empty">Nothing close enough in the catalogue.</p>';
+    return;
+  }
+
+  var cached = loadAnswer(loved);
+  if (cached){ list.innerHTML = recCards(cached); note.innerHTML = footnote(pool.length); return; }
+
+  var plain = parseChoices("", pool);              /* retrieval order, no reasons */
+  list.innerHTML = recCards(plain);
+
+  var key = keyForRag();
+  if (!key){
+    note.innerHTML = '<p class="sub" style="margin:22px 0 12px">These are the closest books by ' +
+      'what their blurbs are about. To see what connects each one, add a Gemini key.</p>' +
+      keyPrompt("", function(){ recommend(loved, pool); });
+    return;
+  }
+
+  note.innerHTML = '<p class="loading">Working out what connects them</p>';
+  var asked = pageId;
+
+  askGemini(buildRecPrompt(loved, pool), key, null, true).then(function(text){
+    var picks = parseChoices(text, pool);
+    if (hasReasons(picks)) saveAnswer(loved, picks);
+    if (pageId !== asked) return;                  /* reader has moved on */
+    list.innerHTML = recCards(picks);
+    note.innerHTML = footnote(pool.length);
+  }).catch(function(err){
+    if (pageId !== asked) return;
+    note.innerHTML = '<p class="note">Showing the closest books without reasons. ' +
+      esc(friendlyError(err)) + '</p>' +
+      (isKeyError(err)
+        ? keyPrompt("Paste a different key:", function(){ recommend(loved, pool); })
+        : '<div class="row"><button class="btn ghost" onclick="recommendCurrent()">Try again</button></div>');
+  });
+}
+
+function recommendCurrent(){
+  var last = trail[trail.length - 1];
+  trail.pop();
+  if (typeof last === "number") openBook(last); else openOutside(last);
+}
+
+function footnote(poolSize){
+  return '<p class="sub" style="margin:22px 0 0">Retrieved from the ' + BOOKS.length.toLocaleString() +
+    ' books in the catalogue by what their blurbs are about. Gemini chose these from the ' +
+    poolSize + ' closest, and was asked to explain each using only their blurbs.</p>';
+}
+
+/* A book the catalogue does not have. There is no stored vector to start
+   from, and a bare title embeds badly - "Gone Girl" lands next to a book
+   called "Gone". So Gemini first writes a short blurb for it, and that blurb
+   is embedded and used to search: hypothetical document embedding, or HyDE.
+   It lands among books that are actually alike, because the catalogue's
+   vectors were made from blurbs too. */
+function describePrompt(query){
+  return "Describe the novel \"" + query + "\" in two or three plain sentences, the way a " +
+    "publisher's blurb would: the premise, the setting, the genre and the tone. No " +
+    "spoilers, no markdown. If you do not know a novel by that name, reply with exactly " +
+    "the word UNKNOWN and nothing else.";
+}
+
+function openOutside(query){
+  trail.push(query);
+  setPage(query, "Not in the catalogue", "");
+  var list = document.getElementById("recList");
+  var note = document.getElementById("recNote");
+
+  if (!VECTORS){
+    note.innerHTML = '<p class="note">Searching by meaning needs vectors.json, which ' +
+      'build_dataset.py writes.</p>';
+    return;
+  }
+  var key = keyForRag();
+  if (!key){
+    note.innerHTML = keyPrompt("Finding books like one outside the catalogue needs a Gemini key " +
+      "to describe it first.", function(){ trail.pop(); openOutside(query); });
+    return;
+  }
+
+  note.innerHTML = '<p class="loading">Describing it</p>';
+  var asked = pageId, blurb = "";
+
+  askGemini(describePrompt(query), key).then(function(text){
+    blurb = text.trim();
+    if (/^UNKNOWN\b/i.test(blurb)) throw new Error("UNKNOWN");
+    if (pageId !== asked) return null;
+    document.getElementById("bookAbout").innerHTML =
+      '<p class="sub" style="margin:0;font-style:italic">' + esc(blurb) + '</p>';
+    note.innerHTML = '<p class="loading">Searching by meaning</p>';
+    return embedQuery(blurb, key);
+  }).then(function(vec){
+    if (!vec || pageId !== asked) return;
+    var pool = nearestBooks(vec, POOL);
+    note.innerHTML = "";
+    recommend({ t:query, a:"", x:blurb, g:[], k:"" }, pool);
+  }).catch(function(err){
+    if (pageId !== asked) return;
+    if (err && err.message === "UNKNOWN"){
+      note.innerHTML = '<p class="note">Gemini does not recognise a novel called &ldquo;' +
+        esc(query) + '&rdquo;. Check the spelling, or try the full title.</p>';
+      return;
+    }
+    list.innerHTML = "";
+    note.innerHTML = '<p class="note">Could not search: ' + esc(friendlyError(err)) + '</p>' +
+      (isKeyError(err)
+        ? keyPrompt("Paste a different key:", function(){ trail.pop(); openOutside(query); })
+        : '<div class="row"><button class="btn ghost" onclick="recommendCurrent()">Try again</button></div>');
+  });
+}
+
+/* --------------------------------------------------------------------------
+   8. GEMINI
+
+   WANT A DIFFERENT MODEL? Change WRITER_MODEL. Aliases rather than pinned
+   versions on purpose: Google retires model versions, and a pinned name
+   starts returning 404 the day that happens - which is how gemini-2.0-flash
+   stopped working here.
+   -------------------------------------------------------------------------- */
+
+var WRITER_MODEL = "models/gemini-flash-latest";
+
+/* Tried if the main model keeps answering "overloaded" (503) or "rate limited"
+   (429). Free-tier limits are per model, so a second one often has room. */
+var FALLBACK_MODEL = "models/gemini-flash-lite-latest";
+
+var KEY_NAME = "brevis_gemini_key";
+
+/* Whose key: the reader's own if they saved one, otherwise the shared key in
+   config.js (written by write_config.py), if there is one. Be clear about the
+   shared key: a key in a static site is public, so anyone can read it from
+   config.js and spend its quota. Keep it on a free-tier project with no
+   billing. */
+function keyForRag(){
+  var own = store.get(KEY_NAME);
+  if (own) return own;
+  try { return window.BREVIS_SHARED_KEY || null; } catch(e){ return null; }
+}
+
+/* One POST to Gemini. "Overloaded" (503) and "rate limited" (429) usually
+   clear within seconds, so they are retried twice - after 1s, then 2s.
+   Anything else fails at once, because asking again would not change the
+   answer. Errors carry the status and Google's own explanation. */
+var RETRIES = 2;
+
+function retryable(status){ return status === 429 || status >= 500; }
+
+function postGemini(url, body, attempt){
+  attempt = attempt || 0;
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }).then(function(res){
+    if (res.ok) return res.json();
+    return res.json().catch(function(){ return {}; }).then(function(data){
+      var reason = (data && data.error && data.error.message) || "";
+      var err = new Error("HTTP " + res.status + (reason ? " - " + reason : ""));
+      err.status = res.status;
+      if (retryable(res.status) && attempt < RETRIES){
+        return new Promise(function(done){ setTimeout(done, 1000 * Math.pow(2, attempt)); })
+          .then(function(){ return postGemini(url, body, attempt + 1); });
+      }
+      throw err;
+    });
+  });
+}
+
+/* Ask for text. json=true asks for a JSON reply, which the recommendation
+   step needs; parseChoices() still checks every part of it. */
+function askGemini(prompt, key, model, json){
+  model = model || WRITER_MODEL;
+  var url = "https://generativelanguage.googleapis.com/v1beta/" + model +
+            ":generateContent?key=" + encodeURIComponent(key);
+  var config = { temperature: 0.3, maxOutputTokens: 4096 };   /* room for "thinking" models */
+  if (json) config.responseMimeType = "application/json";
+
+  return postGemini(url, {
+    contents: [ { parts: [ { text: prompt } ] } ],
+    generationConfig: config
+  }).then(function(data){
+    var cand = data && data.candidates && data.candidates[0];
+    var parts = cand && cand.content && cand.content.parts;
+    var out = "";
+    for (var i=0; parts && i<parts.length; i++) if (parts[i].text) out += parts[i].text;
+    if (!out.trim()) throw new Error("Gemini returned no text.");
+    return out.trim();
+  }).catch(function(err){
+    /* Still overloaded after the retries: try the fallback model once. */
+    if (model !== FALLBACK_MODEL && err.status && retryable(err.status)){
+      return askGemini(prompt, key, FALLBACK_MODEL, json);
+    }
+    throw err;
+  });
+}
+
+/* Turn text into a vector in the same space as vectors.json. No fallback
+   model: the query has to come from the same model as the catalogue. */
+function embedQuery(text, key){
+  var url = "https://generativelanguage.googleapis.com/v1beta/" +
+            VECTORS.model + ":embedContent?key=" + encodeURIComponent(key);
+  return postGemini(url, {
+    model: VECTORS.model,
+    content: { parts: [ { text: text } ] },
+    taskType: "RETRIEVAL_QUERY",
+    outputDimensionality: VECTORS.dims
+  }).then(function(data){
+    var v = data && data.embedding && data.embedding.values;
+    if (!v || !v.length) throw new Error("No vector came back.");
+    return v;
+  });
+}
+
+function friendlyError(err){
+  var m = (err && err.message) ? err.message : String(err);
+  if (isKeyError(err))                     return "Google rejected the key (" + m + ").";
+  if (/\b429\b|quota/i.test(m))            return "The free-tier limit has been reached, even after retrying (" + m + "). Try again in a minute.";
+  if (/\b40[0-9]\b/.test(m))               return "Google refused the request (" + m + ").";
+  if (/\b5[0-9][0-9]\b/.test(m))           return "Google's servers were busy, even after retrying (" + m + "). Try again in a minute.";
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return "No network connection reached Google.";
+  return m;
+}
+
+/* A bad key, as opposed to a busy server: worth offering to replace it. */
+function isKeyError(err){
+  var m = (err && err.message) ? err.message : String(err);
+  return /\b401\b|\b403\b|API.key/i.test(m);
+}
+
+/* Ask for a key right where it is needed. There is no settings screen. */
+var afterKey = null;
+
+function keyPrompt(lead, then){
+  afterKey = then;
+  return (lead ? '<p class="note">' + esc(lead) + '</p>' : '') +
+    '<input class="field" type="password" autocomplete="off" autocorrect="off" ' +
+      'autocapitalize="none" spellcheck="false" placeholder="Paste a free key from aistudio.google.com/apikey">' +
+    '<div class="row"><button class="btn" onclick="saveInlineKey(this)">Save and continue</button></div>';
+}
+
+/* The prompt can sit on a hidden screen too, so find the box beside the
+   button that was pressed rather than looking it up by id. */
+function saveInlineKey(button){
+  var box = button.parentNode.previousElementSibling;
+  var value = box.value.trim();
+  if (!value) return;
+  if (!store.set(KEY_NAME, value)){
+    box.parentNode.innerHTML = '<p class="note">This browser will not let the key be stored ' +
+      '- private browsing blocks it.</p>';
+    return;
+  }
+  var next = afterKey;
+  afterKey = null;
+  if (next) next();
+}
+
+/* --------------------------------------------------------------------------
+   9. START
    -------------------------------------------------------------------------- */
 
 indexBooks();
-renderGenres();
 loadData();
-document.getElementById("searchBox").addEventListener("input", renderSearch);
-document.getElementById("likeBox").addEventListener("input", renderLike);
+document.getElementById("likeBox").addEventListener("input", renderSearch);
 document.getElementById("likeBox").addEventListener("keydown", function(e){
   if (e.key !== "Enter") return;
   e.preventDefault();
   var best = matchTitles(this.value, 1)[0];
-  if (best) showLike(best._i);
+  if (best){ trail = []; openBook(best._i); }
 });
 </script>
 </body>

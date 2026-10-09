@@ -38,8 +38,9 @@ RUNNING IT
     and cached in famous_novels.json - see STAGE 1b.
 
     A GOOGLE_API_KEY is needed ONLY for the last stage, which embeds the few
-    thousand exported books so the app can find similar books in the browser.
-    The app itself never calls an AI model; this is the only place one is used.
+    thousand exported books. Those vectors are the retrieval half of the app's
+    RAG recommender: it compares them in the browser to find candidates, then
+    Gemini chooses among them and explains its picks.
     Everything before that runs offline and free.
 """
 
@@ -854,9 +855,10 @@ def add_neighbours(col, chosen, how_many=6):
 # STAGE 5 - VECTORS FOR THE BROWSER (optional, needs GOOGLE_API_KEY)
 #
 # One Gemini embedding per exported book, stronger than the local model from
-# stage 3. The app compares them with each other in the browser to find
-# similar books - plain arithmetic, no API call at runtime. A few thousand
-# books is around sixty API calls, here, once.
+# stage 3. This is the app's retrieval index: it compares them in the browser
+# to find candidates for a book - plain arithmetic, no API call - and embeds a
+# query with the same model only for books the catalogue does not have. A few
+# thousand books is around sixty API calls, here, once.
 # ---------------------------------------------------------------------------
 
 def build_vectors(chosen, out_path):
