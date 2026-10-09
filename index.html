@@ -368,13 +368,6 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
     <p class="label">Or pick a mood</p>
     <div class="grid" id="genreGrid"><!-- filled by JS --></div>
   </div>
-  <div>
-    <hr class="rule">
-    <label class="label" for="askBox">Or describe a book &mdash; or name one we might not have</label>
-    <input class="field" id="askBox" type="search" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="a quiet novel about grief in space">
-    <div class="row"><button class="btn ghost" onclick="semanticSearch()">Search</button></div>
-    <div class="stack" id="askList" style="margin-top:16px"><!-- filled by JS --></div>
-  </div>
 </section>
 
 <!-- =====================================================================
@@ -428,6 +421,8 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
 
 </div>
 
+<!-- Sets window.BREVIS_SHARED_KEY. Written by write_config.py; optional. -->
+<script src="config.js"></script>
 <script>
 /* ==========================================================================
    BREVIS - all the logic lives here. Plain JavaScript, no libraries.
@@ -727,7 +722,6 @@ function loadData(){
       indexBooks();
       renderGenres();
       renderLike();
-      document.getElementById("askList").innerHTML = "";
       return fetch("vectors.json");
     }).then(function(r){
       return (r && r.ok) ? r.json() : null;
@@ -772,6 +766,27 @@ var store = {
 };
 
 var KEY_NAME = "brevis_gemini_key";
+
+/* THE SHARED KEY - for books the catalogue does not have, and nothing else.
+
+   config.js, written by write_config.py from a key in .env,
+   sets window.BREVIS_SHARED_KEY. When a reader searches for a book Brevis
+   has never heard of, that key is used so they are not asked for one.
+   Everything else - summaries of catalogue books included - still uses the
+   reader's own key, so the shared quota is spent only where it was meant to.
+
+   A reader's own saved key always wins, which spends their quota rather than
+   the shared one.
+
+   Be clear about what this is: a key in a static site is public. Anyone can
+   read it from config.js and use it. Keep it on a free-tier project with no
+   billing, so the worst that can happen is a used-up quota, and replace it
+   if that happens. */
+function keyForMissingBook(){
+  var own = store.get(KEY_NAME);
+  if (own) return own;
+  try { return window.BREVIS_SHARED_KEY || null; } catch(e){ return null; }
+}
 
 /* WANT A DIFFERENT MODEL? Change this one line.
    "latest" rather than a pinned version on purpose: Google retires model
@@ -1207,9 +1222,10 @@ function renderSummary(){
   var slot = (book.external ? "ask:" + book.t : book._i) + "|" + want;
   if (cache[slot]){ body.innerHTML = paragraphs(cache[slot]); return; }
 
-  /* No key stored yet. Ask for one right here, at the moment it is needed,
-     rather than sending the reader off to a settings screen. */
-  var key = store.get(KEY_NAME);
+  /* A book the catalogue does not have may use the shared key; a catalogue
+     book uses the reader's own. If there is neither, ask for one right here,
+     at the moment it is needed. */
+  var key = book.external ? keyForMissingBook() : store.get(KEY_NAME);
   if (!key){ body.innerHTML = keyPrompt(); return; }
 
   body.innerHTML = '<p class="loading">' +
@@ -1339,13 +1355,12 @@ function askGemini(prompt, key){
 /* --------------------------------------------------------------------------
    8. SEARCH BY MEANING
 
-   The other search box, on the mood screen. Instead of matching letters it
-   compares meanings: the phrase the reader typed is turned into a vector by
-   Gemini, and compared against the vector of every book in vectors.json.
-   Those were made by the same model at the same size, so the two live in the
-   same space and a plain dot product ranks them.
-
-   This needs both an API key and vectors.json. Without either, it says so.
+   Compares meanings rather than letters: a piece of text is turned into a
+   vector by Gemini and compared against the vector of every book in
+   vectors.json. Those were made by the same model at the same size, so they
+   live in the same space and a dot product ranks them. Used for books the
+   catalogue does not have; books it does have use their stored vector and
+   need no API call at all.
    -------------------------------------------------------------------------- */
 
 function embedQuery(text, key){
@@ -1413,46 +1428,6 @@ function nearestBooks(query, howMany){
     if (b) out.push(b);
   }
   return out;
-}
-
-/* The offer to go outside the catalogue. Shown, never taken automatically. */
-function askCard(query, why){
-  return '<p class="note">' + esc(why) + '</p>' +
-    '<button class="card" onclick="askAbout(' + jsArg(query) + ')">' +
-      '<span class="name">Ask about &ldquo;' + esc(query) + '&rdquo;</span>' +
-      '<span class="hook">Brevis will look it up and write about it.</span>' +
-    '</button>';
-}
-
-function semanticSearch(){
-  var q = document.getElementById("askBox").value.trim();
-  var out = document.getElementById("askList");
-
-  if (q.length < 3){ out.innerHTML = '<p class="empty">Type a little more.</p>'; return; }
-
-  /* Without vectors.json there is no local index to search, so the only thing
-     left to offer is asking about it directly. */
-  if (!VECTORS){
-    out.innerHTML = askCard(q, "Searching the catalogue by meaning needs vectors.json, " +
-                               "which build_dataset.py writes.");
-    return;
-  }
-
-  var key = store.get(KEY_NAME);
-  if (!key){
-    out.innerHTML = keyPrompt("Search by meaning needs a Gemini key to read your " +
-      "phrase. Paste a free one from aistudio.google.com/apikey - it stays in this browser.",
-      semanticSearch);
-    return;
-  }
-
-  out.innerHTML = '<p class="loading">Looking</p>';
-  embedQuery(q, key).then(function(vec){
-    var hits = nearestBooks(vec, 6);
-    out.innerHTML = hits.length ? bookCards(hits) : askCard(q, "Nothing in the catalogue is close.");
-  }).catch(function(err){
-    out.innerHTML = '<p class="note">Could not search: ' + esc(friendlyError(err)) + '</p>';
-  });
 }
 
 /* --------------------------------------------------------------------------
@@ -1577,7 +1552,7 @@ function likeOutside(query){
     return;
   }
 
-  var key = store.get(KEY_NAME);
+  var key = keyForMissingBook();
   if (!key){
     out.innerHTML = keyPrompt("Finding books like one outside the catalogue needs a Gemini " +
       "key. Paste a free one from aistudio.google.com/apikey - it stays in this browser.",
@@ -1623,9 +1598,6 @@ document.getElementById("likeBox").addEventListener("keydown", function(e){
   var best = matchTitles(this.value, 1)[0];
   if (best) showLike(best._i);
   else if (this.value.trim().length >= 2) likeOutside(this.value.trim());
-});
-document.getElementById("askBox").addEventListener("keydown", function(e){
-  if (e.key === "Enter"){ e.preventDefault(); semanticSearch(); }
 });
 </script>
 </body>
