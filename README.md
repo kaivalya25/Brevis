@@ -1,10 +1,12 @@
 # Brevis
 
-Worth your week, or worth skipping? Brevis gives you two summaries of a novel —
-one short, one long — with enough detail to decide, and never enough to spoil it.
+Worth your week, or worth skipping? Name a novel you loved and Brevis finds five
+that are genuinely alike, or start from a mood and work down to a book. Every
+book comes with what it's about and what readers shelved it as.
 
 One HTML file. No server, no database, no build step, no packages, no accounts,
-no tracking. It works when you double-click it and it works on a static host.
+no tracking, and **no AI calls at runtime**. It works when you double-click it
+and it works on a static host.
 
 **Live:** [kaivalya25.github.io/Brevis](https://kaivalya25.github.io/Brevis/)
 
@@ -13,6 +15,7 @@ no tracking. It works when you double-click it and it works on a static host.
 ## How it works
 
 Three ideas, and the interesting part is that all three survive having no backend.
+For the short version of what kind of project this is, see *Is this RAG?* below.
 
 ### 1. A recommendation system
 
@@ -97,10 +100,10 @@ them found only what surrounds the book, never the book itself:
 The filters rightly reject all of those, and no matching logic can find a book
 the scrape never captured. Closing this gap needs a second source of blurbs for
 the missing novels, such as Open Library. They're listed in `famous_missing.txt`
-after each build. For now, books outside the catalogue are still reachable
-through the Gemini fallback in **More like this**.
+after each build. Searching for one still turns up something: books whose
+blurbs mention it, which is often the "for fans of *The Hunger Games*" crowd.
 
-### 2. Retrieval-augmented generation
+### 2. Semantic retrieval
 
 The shortlisted blurbs are embedded into a local Chroma vector database. Each of
 the eleven moods is a sentence — *"a quiet, sad, reflective novel about loss,
@@ -111,17 +114,11 @@ kept as a fallback for when the stronger Gemini vectors below aren't loaded.
 None of that runs on your phone. A vector database at runtime would need a
 server, so retrieval happens once offline and only the result ships.
 
-At runtime the app still retrieves before it generates: opening a summary
-gathers the book's blurb, rating, moods, shelves and nearest neighbours out of
-the local dataset and puts them in the prompt as grounding, instructing the model
-to trust that material over its own memory.
-
-`vectors.json` holds one Gemini embedding per book, 128 numbers quantised to a
-byte each, which is why the whole index is under a megabyte. Everything that
-needs "books like this one" compares those vectors in the browser with a dot
-product: **More like this**, **If you liked this**, and the neighbours fed into a
-summary's grounding. That's arithmetic on data already in the page, so it needs
-no API call. It's also much better than the build's local model: for *The Way of
+`vectors.json` holds one Gemini embedding per book, made at build time: 128
+numbers quantised to a byte each, which is why the whole index is under a
+megabyte. Everything that needs "books like this one" compares those vectors in
+the browser with a dot product: **More like this** and **If you liked this**.
+That's arithmetic on data already in the page, so it needs no API call. It's also much better than the build's local model: for *The Way of
 Kings* the local model suggested *A Mother's Shame*; the Gemini vectors suggest
 *A Memory of Light*, *A Game of Thrones* and *The Dragon Reborn*.
 
@@ -148,136 +145,60 @@ matches, and get its five nearest neighbours.
 - **Matching** ranks exact titles first, then titles starting with what you
   typed, then any word in the title, then authors. Accents and punctuation are
   ignored, and `way kings` finds *The Way of Kings*.
-- **Series names** — people type *mistborn*, but the stored title is *The Final
-  Empire*. If nothing matches a title or author, the blurbs are searched for the
-  whole word, which is where series names turn up. Only as a fallback: a common
-  word like *love* appears in 839 blurbs.
+- **Series names, and books we don't have.** People type *mistborn*, but the
+  stored title is *The Final Empire*. If nothing matches a title or author, the
+  blurbs are searched for the whole phrase, and the results are labelled
+  honestly: "No title by that name. These books mention *mistborn*." The same
+  search turns up books pitched at fans of one the catalogue lacks, such as *The
+  Hunger Games*. It's only a fallback, because a common word like *love* appears
+  in 839 blurbs.
 - **Same-author books are left out.** Recommending more Sanderson to someone who
   loved Sanderson tells them nothing; there's a link to the book itself instead.
-- **Free and instant** for anything in the catalogue. No key, no API call.
+- **Free and instant.** No key, no API call.
 
-**Books the catalogue doesn't have** fall back to Gemini, only when you tap, using
-the shared key described under *The API key* so visitors aren't asked for one.
-Embedding a bare title doesn't work: *Gone Girl* landed next to a book called
-*Gone*, because a title is a few words with no meaning attached. So Gemini first
-writes a two-sentence blurb for the book, and that blurb is embedded instead.
-The catalogue vectors were built from blurbs, so it lands among books that are
-actually alike. The blurb is shown above the results, so a misidentified book is
-obvious, and a title Gemini doesn't recognise is refused rather than guessed at.
+### 3. The book page
 
-### 3. Two summaries, and no spoilers
-
-Every book offers two lengths, and **neither is fetched until you tap for it**:
-
-- **Short** — 200–300 words. Enough to tell in a minute whether it's for you.
-- **Long** — 700–1000 words. The setup, the characters and what they want, the
-  themes, the tone and pace of the writing, and who would love it.
-
-The prompts spend more words on what *not* to say than on what to write: no
-ending, no twist, no hint that a twist is coming, nothing past roughly the first
-quarter of the book. If a fact would spoil the read it is left out entirely
-rather than hedged. The instruction is to describe the promise of a book, not
-its payoff.
-
-You can browse the whole catalogue — every mood, every author, every book — and
-Gemini is never called once. Each length is cached per book, so switching
-between them is instant after the first time.
-
-The one place Gemini acts on its own initiative is when you name a book or author
-the catalogue doesn't have. Search for something missing and Brevis offers to
-look it up; the same two lengths then apply, written from scratch. That offer is
-always a tap, never automatic.
+Opening a book shows its publisher's blurb from the dataset, the moods it was
+tagged with, what readers shelved it as, and four books like it. Nothing is
+fetched and nothing is generated, so it's instant and works offline.
 
 ---
 
-## The API key
+## Is this RAG?
 
-There is no settings screen. Brevis uses two kinds of key, for two different jobs:
+**No.** RAG means *Retrieval-Augmented Generation*: retrieve relevant material,
+then have a language model write an answer from it. Earlier versions of Brevis
+did exactly that, retrieving a book's blurb and neighbours and having Gemini
+write spoiler-free summaries from them. That generation step has been removed,
+along with every other runtime AI call.
 
-| Job | Key used |
-|---|---|
-| **A book the catalogue doesn't have.** "Find books like…" in More like this, or "Ask about…" in author search | The **shared key** in `config.js`, so visitors aren't asked for anything. A visitor's own saved key takes priority if they have one. |
-| **Summaries of catalogue books** | The visitor's own key, asked for inline the first time and stored in their browser |
-| **Browsing**: moods, authors, More like this for catalogue books | None. No API call at all |
+What's left is a **retrieval and recommendation system**:
 
-### The shared key
-
-`config.js` sets `window.BREVIS_SHARED_KEY`, and `write_config.py` writes it from
-a key in your `.env`, so the key is never typed or pasted anywhere:
-
-```bash
-python write_config.py
-```
-
-It uses the first of `BREVIS_SHARED_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`
-that's set in `.env` (`--var NAME` picks a specific one), and it never prints the
-key. Then commit and push `config.js`. Without `config.js` the app still works;
-missing-book lookups just ask for a key instead.
-
-**This key is public.** Brevis is a static page with no server, so anything the
-page can read, a visitor can read, including `config.js`. Anyone could copy the
-key and spend its quota. So:
-
-- **Use a key from a free-tier Google project with no billing set up.** Then the
-  worst case is a used-up quota, never a bill.
-- **If lookups for missing books stop working**, the quota has probably been
-  used. Create a new key, put it in `.env`, re-run `write_config.py`, and push.
-- **GitHub scans public repos for Google keys** and may block the push or report
-  the key to Google, which can disable it.
-
-The fully safe alternative is a small proxy, such as a free Cloudflare Worker,
-that holds the key on a server so visitors never see it. That would be the first
-part of Brevis that needs a server.
-
-### Building the dataset
-
-That runs on your laptop, so its key stays in `.env`, which is gitignored and
-never published:
-
-|  | Where the key lives | Visible to visitors? |
+| Part | Technique | When it runs |
 |---|---|---|
-| **`build_dataset.py`** | `.env` | No |
-| **Shared key for missing books** | `config.js`, from `.env` via `write_config.py` | **Yes** |
-| **A visitor's own key** | Their browser | No |
+| Ranking | Bayesian weighted rating, top-K heap over 3.9M rows | Build time |
+| Coverage | Wikidata must-include list, fuzzy title matching | Build time |
+| Moods | Vector queries against a Chroma index | Build time |
+| Embeddings | Local MiniLM (shortlist), Gemini `gemini-embedding-001` (export) | Build time, once |
+| Similar books | Dot-product nearest neighbours with CSLS hubness correction | In the browser, no API |
+| Search | Fuzzy title, author and series-name matching | In the browser, no API |
 
-Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
-
-### Models
-
-Both model names are aliases rather than pinned versions, deliberately:
-
-- Writing — `models/gemini-flash-latest`, set in `WRITER_MODEL` in `index.html`.
-- Embedding — `models/gemini-embedding-001`, set in `EMBED_MODEL` in `build_dataset.py`.
-
-Google retires model versions, and a pinned name starts returning 404 the day it
-happens. That is exactly how `gemini-2.0-flash` and `text-embedding-004` stopped
-working here mid-build.
-
-**When Google is busy.** The API answers "the model is overloaded" (503) or
-"rate limited" (429) from time to time. Every request retries twice, after 1s and
-then 2s. If writing still fails, it tries a backup model,
-`models/gemini-flash-lite-latest` (`FALLBACK_MODEL`). Free-tier limits are per
-model, so the backup often has room. Embedding has no backup, because the query
-vector has to come from the same model as the catalogue's vectors. A request
-that still fails says which step failed and quotes Google's reason. Only a
-rejected key prompts for a new one; anything else offers **Try again**.
+Machine learning is still in it, as embedding models that turn blurbs into
+vectors. But they run once, on a laptop, when the dataset is built. The app
+itself never calls a model.
 
 ---
 
 ## Using it
 
-1. Open the app in Safari.
-2. Type a book you loved for five like it, or pick a mood, an author, a book.
-3. Tap **Short** or **Long**. The first time, paste a Gemini key when asked.
-4. Typed a book Brevis doesn't have? Tap **Find books like…** and the shared key
-   finds its closest matches. No key needed.
+1. Open the app in Safari and tap **Begin**.
+2. Type a book you loved to get five like it, or pick a mood, then an author,
+   then a book.
+3. Each book shows its blurb, moods, shelves, and books like it.
 
 On an iPhone, Share → **Add to Home Screen** and it opens like an app.
 
-Without a key of their own, a visitor can still browse everything — every mood,
-every author, every book, the recommendations — and look up books outside the
-catalogue through the shared key. Only summaries of catalogue books need their
-own key.
+No key, no account, no sign-up. Nothing a visitor does sends anything anywhere.
 
 ---
 
@@ -294,7 +215,10 @@ pip install chromadb pyarrow fsspec numpy requests aiohttp
 cp .env.example .env
 ```
 
-Edit `.env` so it reads `GOOGLE_API_KEY=your-real-key`, then:
+Edit `.env` so it reads `GOOGLE_API_KEY=your-real-key`. The build is the only
+thing that uses a key, for the embeddings in `vectors.json`; the app never does.
+Get a free one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+Then:
 
 ```bash
 python build_dataset.py
@@ -320,12 +244,17 @@ minutes.
 | `--famous 1500` | How many of Wikidata's most widely covered novels must be included. `0` switches it off. |
 | `--refresh-famous` | Re-fetch the must-include list instead of using `famous_novels.json`. |
 | `--vectors-only` | Just rebuild `vectors.json` from an existing `books.json`. |
-| `--no-vectors` | Skip the Gemini stage entirely. |
+| `--no-vectors` | Skip the Gemini stage entirely. More like this then falls back to the weaker local-model neighbours. |
 
 Costs of a full run: about fifteen minutes streaming, twenty minutes of CPU to
 embed a 60,000-book shortlist locally, one Wikidata query (skipped when
-`famous_novels.json` is already there), and around sixty Gemini calls for the
-browser vectors — comfortably inside the free tier.
+`famous_novels.json` is already there), and around sixty Gemini embedding calls
+for `vectors.json`, comfortably inside the free tier.
+
+The embedding model is `models/gemini-embedding-001` (`EMBED_MODEL`), an alias
+rather than a pinned version. Google retires model versions, and a pinned name
+starts returning 404 the day it happens, which is how `text-embedding-004`
+stopped working here mid-build.
 
 The famous novels that couldn't be found are written to `famous_missing.txt`
 (not committed), which shows where the dataset's gaps are.
@@ -369,10 +298,10 @@ Everything is in `index.html`:
   `books.json` is absent. Give every author at least three books.
 - **The moods** — the `GENRES` list below it, and `MOODS` in `build_dataset.py`.
   The tags must match.
-- **The prompts** — `buildPrompt()` for catalogue books, `buildAskPrompt()` for
-  ones we don't have. The spoiler rules live here.
-- **The retrieval** — `retrieve()`, which decides what grounding the model gets.
-- **The model** — `WRITER_MODEL`, one line.
+- **The book page** — `renderAbout()`.
+- **Similar books** — `similarTo()` and `nearestBooks()`, including the CSLS
+  correction.
+- **Search** — `matchTitles()` and `matchBlurbs()`.
 - **The must-include list** — `famous_novels.json`. It's plain JSON and safe to
   edit by hand: add a novel you want guaranteed, then rebuild.
 - **The colours** — five values in `:root` at the top of the `<style>` block.
@@ -384,7 +313,7 @@ Everything is in `index.html`:
 - **Famous novels** — [Wikidata](https://www.wikidata.org/), released under
   [CC0](https://creativecommons.org/publicdomain/zero/1.0/). `famous_novels.json`
   is a cached query result and carries the same dedication.
-- **Embeddings and summaries** — Google Gemini.
+- **Embeddings** — Google Gemini, at build time only.
 
 ## Size
 

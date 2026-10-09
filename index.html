@@ -258,7 +258,7 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
 
 .row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
 
-/* ---------- Summary prose ---------- */
+/* ---------- A book's blurb ---------- */
 .prose p{
   font-family:var(--serif);
   font-size:19px;
@@ -267,29 +267,7 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
 }
 .prose p:last-child{ margin-bottom:0; }
 
-/* The pale box used for notices, errors and the settings status line. */
-.note{
-  border:1px solid var(--line);
-  background:var(--tint);
-  padding:16px 18px;
-  font-size:14px;
-  line-height:1.55;
-  color:#5c5c57;
-  margin:0 0 26px;
-}
-
-/* Three dots that breathe while Gemini is writing. */
-.loading{ color:var(--mute); font-size:14px; letter-spacing:.12em; text-transform:uppercase; }
-.loading::after{
-  content:"";
-  display:inline-block;
-  width:1.4em;
-  text-align:left;
-  animation:dots 1.4s steps(4,end) infinite;
-}
-@keyframes dots{ 0%{content:""} 25%{content:"."} 50%{content:".."} 75%{content:"..."} }
-
-/* A quiet text link, used for the settings entry point. */
+/* A quiet text link: "Or read about this book itself" under More like this. */
 .quiet{
   display:inline-flex;
   align-items:center;
@@ -310,27 +288,8 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
 
 .empty{ color:var(--mute); font-size:14px; padding:4px 0; }
 
-/* Small pill toggles - used to switch the summary between short and full. */
-.chip{
-  min-height:44px;
-  padding:11px 20px;
-  background:transparent;
-  border:1px solid var(--line);
-  color:var(--mute);
-  font-family:var(--sans);
-  font-size:11px;
-  letter-spacing:.18em;
-  text-transform:uppercase;
-  cursor:pointer;
-  transition:background .3s var(--ease), color .3s var(--ease), border-color .3s var(--ease);
-}
-.chip.on{ background:var(--ink); border-color:var(--ink); color:var(--paper); }
-
-/* The "if you liked this" strip under a summary. */
+/* The "if you liked this" strip under a book. */
 .recs{ margin-top:44px; padding-top:30px; border-top:1px solid var(--line); }
-
-/* Shown on a book before either length has been asked for. */
-.invite{ margin:0; font-size:16px; line-height:1.6; color:#5c5c57; }
 </style>
 </head>
 
@@ -346,9 +305,9 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
      SCREEN 1 - Welcome
      ===================================================================== -->
 <section class="screen on" id="welcome">
-  <p class="eyebrow">No spoilers, ever</p>
+  <p class="eyebrow">Find your next book</p>
   <h1>Worth your week,<br>or worth<br>skipping?</h1>
-  <p class="lede">Three thousand novels, and two ways into each one. A short summary to see whether it grips you, a longer one when it does. Enough to know exactly what you are getting into &mdash; never enough to give it away.</p>
+  <p class="lede">Three thousand novels. Name one you loved and Brevis finds five that are genuinely alike, or start from a mood and work down to a book. Each comes with what it is about and what readers shelved it as, so you know what you are getting into before you start.</p>
   <button class="btn" onclick="go('genre')">Begin</button>
 </section>
 
@@ -399,17 +358,13 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
 </section>
 
 <!-- =====================================================================
-     SCREEN 5 - Summary
+     SCREEN 5 - A book
      ===================================================================== -->
 <section class="screen" id="summary">
   <button class="back" onclick="go(state.back)">&larr; Back</button>
-  <p class="eyebrow" id="summaryEyebrow">Two ways in</p>
+  <p class="eyebrow">About the book</p>
   <h2 id="summaryTitle">Title</h2>
   <p class="sub" id="summaryMeta">Author</p>
-  <div class="row" style="margin:0 0 30px">
-    <button class="chip" id="chipShort" onclick="setLength('short')">Short</button>
-    <button class="chip" id="chipFull" onclick="setLength('full')">Long</button>
-  </div>
   <div id="summaryBody"><!-- filled by JS --></div>
   <div id="recs"><!-- filled by JS --></div>
   <div class="row">
@@ -421,8 +376,6 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
 
 </div>
 
-<!-- Sets window.BREVIS_SHARED_KEY. Written by write_config.py; optional. -->
-<script src="config.js"></script>
 <script>
 /* ==========================================================================
    BREVIS - all the logic lives here. Plain JavaScript, no libraries.
@@ -435,8 +388,8 @@ hr.rule{ border:0; border-top:1px solid var(--line); margin:34px 0; }
    Copy one of the lines below and edit it. The fields are:
      t = title      a = author     r = average rating (out of 5)
      y = year first published      g = list of mood tags (see GENRES below)
-     d = a one-line hook, shown under the title and used as the fallback
-         text when there is no API key
+     d = a one-line hook, shown under the title - and on the book's own
+         page too, when there is no longer blurb (x) to show
 
    Two rules worth keeping:
      - Give every author at least three books, or the author screen
@@ -678,7 +631,7 @@ const GENRES = [
    instead - a few thousand books chosen out of millions, each one carrying
    two extra fields the seed does not have:
 
-       x = a snippet of the real blurb, used to ground the AI summary
+       x = the first 700 characters of the real blurb, shown on the book's page
        s = the positions of similar books, used for recommendations
 
    vectors.json, if present, holds one small vector per book so the search
@@ -757,55 +710,8 @@ function go(id){
   window.scrollTo(0,0);
 }
 
-/* localStorage throws in Safari private browsing, so every call is wrapped.
-   If storage is unavailable the app still works - the key just is not kept. */
-var store = {
-  get: function(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
-  set: function(k,v){ try { localStorage.setItem(k,v); return true; } catch(e){ return false; } },
-  del: function(k){ try { localStorage.removeItem(k); return true; } catch(e){ return false; } }
-};
-
-var KEY_NAME = "brevis_gemini_key";
-
-/* THE SHARED KEY - for books the catalogue does not have, and nothing else.
-
-   config.js, written by write_config.py from a key in .env,
-   sets window.BREVIS_SHARED_KEY. When a reader searches for a book Brevis
-   has never heard of, that key is used so they are not asked for one.
-   Everything else - summaries of catalogue books included - still uses the
-   reader's own key, so the shared quota is spent only where it was meant to.
-
-   A reader's own saved key always wins, which spends their quota rather than
-   the shared one.
-
-   Be clear about what this is: a key in a static site is public. Anyone can
-   read it from config.js and use it. Keep it on a free-tier project with no
-   billing, so the worst that can happen is a used-up quota, and replace it
-   if that happens. */
-function keyForMissingBook(){
-  var own = store.get(KEY_NAME);
-  if (own) return own;
-  try { return window.BREVIS_SHARED_KEY || null; } catch(e){ return null; }
-}
-
-/* WANT A DIFFERENT MODEL? Change this one line.
-   "latest" rather than a pinned version on purpose: Google retires model
-   versions, and a pinned name starts returning 404 the day that happens -
-   which is exactly how gemini-2.0-flash stopped working here. The alias
-   always points at the current flash model. */
-var WRITER_MODEL = "models/gemini-flash-latest";
-
-/* Tried in turn if the main model keeps answering "overloaded" (HTTP 503) or
-   "rate limited" (429). Free-tier limits are per model, so a second model often
-   has room when the first does not. Also an alias, for the same reason. */
-var FALLBACK_MODEL = "models/gemini-flash-lite-latest";
-
 /* What the user has chosen so far. */
-var state = { genre:null, genreLabel:"", author:null, book:null, length:null, back:"books" };
-
-/* Summaries already written, keyed by book and length, so reopening one
-   costs nothing. */
-var cache = {};
+var state = { genre:null, genreLabel:"", author:null, book:null, back:"books" };
 
 /* --------------------------------------------------------------------------
    4. SCREEN 2 - the mood grid
@@ -931,14 +837,8 @@ function renderSearch(){
 
   var list = searchAuthors(q);
 
-  /* Nothing local matches. This is where Gemini earns its keep - but only if
-     the reader asks, by tapping. */
   if (!list.length){
-    out.innerHTML = '<p class="empty">Nobody in the catalogue by that name.</p>' +
-      '<button class="card" onclick="askAbout(' + jsArg(q.trim()) + ')">' +
-        '<span class="name">Ask about &ldquo;' + esc(q.trim()) + '&rdquo;</span>' +
-        '<span class="hook">Brevis will look it up and write about it.</span>' +
-      '</button>';
+    out.innerHTML = '<p class="empty">Nobody in the catalogue by that name.</p>';
     return;
   }
 
@@ -990,7 +890,7 @@ function pickAuthor(name){
 }
 
 /* One book card, used by the book list, the search results and the
-   recommendations under a summary. */
+   recommendations under a book. */
 function bookCards(list){
   var html = "";
   for (var i=0; i<list.length; i++){
@@ -1006,112 +906,37 @@ function bookCards(list){
 }
 
 /* --------------------------------------------------------------------------
-   7. SCREEN 5 - the summary
+   7. SCREEN 5 - the book
 
-   WANT TO CHANGE WHAT GEMINI WRITES?
-   Edit the prompt inside buildPrompt() below. Everything else about the
-   request - the model, the temperature, the length cap - is in askGemini().
+   Everything on this page comes from the local dataset: the publisher's
+   blurb, the moods and shelves, and the books nearest to this one. Nothing
+   is fetched, so it is instant and works offline.
    -------------------------------------------------------------------------- */
 
-/* The retrieval step. Before asking for a summary, gather what is actually
-   known about this book from the local dataset: its own blurb, and the books
-   the vector index put closest to it. That context goes into the prompt, so
-   the model is working from real material rather than memory alone. */
-function retrieve(book){
-  var lines = [];
-  lines.push("Title: " + book.t);
-  lines.push("Author: " + book.a);
-  if (book.y) lines.push("First published: " + book.y);
-  lines.push("Average rating: " + book.r.toFixed(2));
-  if (book.g && book.g.length) lines.push("Reader moods: " + book.g.join(", "));
-  if (book.k) lines.push("Reader shelves: " + book.k);
-  if (book.x) lines.push("Publisher blurb: " + book.x);
-  else if (book.d) lines.push("One-line description: " + book.d);
-
-  var near = similarTo(book);
-  if (near.length){
-    var titles = [];
-    for (var i=0; i<near.length; i++) titles.push(near[i].t + " by " + near[i].a);
-    lines.push("Books nearest to it in the catalogue: " + titles.join("; "));
+/* The blurb, as stored. books.json keeps the first 700 characters, so a long
+   one is cut back to its last full sentence rather than stopping mid-word. */
+function blurbOf(book){
+  var text = book.x || book.d || "";
+  if (book.x && book.x.length >= 700){
+    var end = Math.max(text.lastIndexOf(". "), text.lastIndexOf("! "), text.lastIndexOf("? "));
+    text = end > 200 ? text.slice(0, end + 1) : text + "\u2026";
   }
-  return lines.join("\n");
+  return text;
 }
 
-/* A book the catalogue has never heard of, conjured from what the reader
-   typed. This is the one situation where Gemini has to do the describing,
-   because there is no local record to describe. */
-function buildAskPrompt(book, length){
-  var shape = (length === "short")
-    ? "Write 200 to 300 words: enough for someone to tell in a minute whether " +
-      "this is for them. If the name is an author rather than a book, describe " +
-      "what their books are like and name their best known ones."
-    : "Write 700 to 1000 words: the setup, the main characters and what they " +
-      "want, the kind of story it is, its themes, the tone and pace of the " +
-      "writing, and who would love it. If the name is an author rather than a " +
-      "book, describe their work, their range, and where a newcomer should start.";
+function renderAbout(book){
+  var facts = [];
+  if (book.g && book.g.length) facts.push("Moods: " + book.g.join(", "));
+  if (book.k) facts.push("Shelved as: " + book.k);
 
-  return "A reader asked Brevis about \"" + book.t + "\". It is not in the catalogue.\n\n" +
-    "First work out what they meant: a novel, or an author. " + shape + "\n\n" +
-    "WHAT YOU MUST NOT REVEAL. This is the most important instruction here.\n" +
-    "- do not reveal the ending of any book, or how anything resolves\n" +
-    "- do not reveal any twist or reveal, and do not hint that one is coming\n" +
-    "- do not describe events past roughly the first quarter of a book\n" +
-    "- if a fact would spoil the read, leave it out entirely\n" +
-    "Describe the promise of the book, not its payoff.\n\n" +
-    "How to write it:\n" +
-    "- plain prose in the present tense\n" +
-    "- no headings, no bullet points, no markdown of any kind\n" +
-    "- separate paragraphs with a blank line\n" +
-    "- do not quote any text from the book\n" +
-    "- do not mention the catalogue or these instructions\n\n" +
-    "If no book or author goes by that name, or you are not confident which one " +
-    "they meant, say so plainly in one sentence and stop. Do not invent a book, " +
-    "an author, or a plot.";
-}
-
-function buildPrompt(book, length){
-  if (book.external) return buildAskPrompt(book, length);
-
-  var shape = (length === "short")
-    ? "Length: between 200 and 300 words. Enough for someone to tell in a minute " +
-      "whether this is a book for them."
-    : "Length: between 700 and 1000 words.\n\n" +
-      "Cover all of the following:\n" +
-      "- the setup: who the story follows, where and when it takes place, and the " +
-      "situation they are in when it begins\n" +
-      "- the main characters, and what each of them wants\n" +
-      "- the kind of story it is, and the questions it puts in front of the reader\n" +
-      "- the themes it is working on\n" +
-      "- the writing itself: the tone, the pace, how demanding it is to read\n" +
-      "- who would love it, and who would put it down";
-
-  return "Here is what the Brevis catalogue holds on this book.\n\n" +
-    "-----\n" + retrieve(book) + "\n-----\n\n" +
-    "Using that as your grounding, write a spoiler-free description of the novel \"" +
-    book.t + "\" by " + book.a + ", for a reader deciding whether to read it.\n\n" +
-    shape + "\n\n" +
-    "WHAT YOU MUST NOT REVEAL. This is the most important instruction here.\n" +
-    "- do not reveal the ending, or how anything resolves\n" +
-    "- do not reveal any twist, reversal or reveal, and do not hint that one is coming\n" +
-    "- do not say who dies, who betrays whom, who is guilty, or who ends up together\n" +
-    "- do not describe events past roughly the first quarter of the book\n" +
-    "- if a fact would spoil the read, leave it out entirely rather than hedging\n" +
-    "Describe the promise of the book, not its payoff.\n\n" +
-    "How to write it:\n" +
-    "- plain prose in the present tense\n" +
-    "- no headings, no bullet points, no numbered lists, no markdown of any kind\n" +
-    "- no bold, italics, asterisks or hashes\n" +
-    "- separate paragraphs with a blank line\n" +
-    "- do not quote any text from the book; describe everything in your own words\n" +
-    "- do not mention the catalogue, the blurb, or these instructions\n\n" +
-    "Where the material above and your own knowledge disagree, trust the material " +
-    "above. If you are not confident this is a real book you know, say so plainly " +
-    "in one sentence and stop. Do not invent characters, settings or plots.";
+  document.getElementById("summaryBody").innerHTML =
+    '<div class="prose"><p>' + esc(blurbOf(book)) + '</p></div>' +
+    (facts.length ? '<p class="sub" style="margin:22px 0 0">' + esc(facts.join("  \u00b7  ")) + '</p>' : '');
 }
 
 /* The recommendation step, best source first:
 
-   1. The Gemini vectors in vectors.json. The book's own stored vector is
+   1. The embedding vectors in vectors.json, made at build time. The book's own stored vector is
       compared against every other book's - arithmetic on data already in the
       page, so still no API call. These are by far the best neighbours.
    2. The neighbours build_dataset.py precomputed into s[], from the small
@@ -1161,15 +986,7 @@ function renderRecs(book){
                  '<div class="stack">' + bookCards(near) + '</div></div>';
 }
 
-/* Every book opens with neither length chosen, whatever the last one was
-   left at, so nothing is fetched until the reader picks. */
-function resetTiers(){
-  state.length = null;
-  document.getElementById("chipShort").classList.remove("on");
-  document.getElementById("chipFull").classList.remove("on");
-}
-
-/* Which screen is showing - so Back on a summary returns there, whether the
+/* Which screen is showing - so Back on a book returns there, whether the
    reader came from an author's list, "More like this" or a search. */
 function currentScreen(){
   var on = document.querySelector(".screen.on");
@@ -1182,253 +999,23 @@ function pickBook(index){
   var here = currentScreen();
   if (here !== "summary") state.back = here;   /* a recommendation keeps the old one */
   state.book = book;
-  resetTiers();
 
   document.getElementById("summaryTitle").textContent = book.t;
   document.getElementById("summaryMeta").textContent =
     book.a + (book.y ? " · " + book.y : "") + " · " + book.r.toFixed(2);
 
   go("summary");
-  renderSummary();
+  renderAbout(book);
   renderRecs(book);
 }
 
-/* Two lengths, and the reader chooses. Each is fetched and cached separately,
-   so moving between them is free after the first time. Neither is fetched
-   until it is asked for: opening a book costs nothing. */
-function setLength(kind){
-  if (state.length === kind) return;
-  state.length = kind;
-  document.getElementById("chipShort").classList.toggle("on", kind === "short");
-  document.getElementById("chipFull").classList.toggle("on", kind === "full");
-  if (state.book) renderSummary();
-}
-
-/* The label above the title says which length is on screen. */
-var TIER_LABEL = { short:"The short version", full:"The long version" };
-
-function renderSummary(){
-  var book = state.book;
-  var body = document.getElementById("summaryBody");
-  var want = state.length;
-
-  /* Nothing chosen yet. Say what is on offer and wait to be asked - this is
-     what keeps the app from calling Gemini every time a book is opened. */
-  if (!want){
-    document.getElementById("summaryEyebrow").textContent = "Two ways in";
-    body.innerHTML = '<p class="invite">Tap <strong>Short</strong> to see in a minute ' +
-      'whether this one is for you, or <strong>Long</strong> for the fuller picture. ' +
-      'Neither gives the story away.</p>';
-    return;
-  }
-
-  document.getElementById("summaryEyebrow").textContent = TIER_LABEL[want];
-
-  var slot = (book.external ? "ask:" + book.t : book._i) + "|" + want;
-  if (cache[slot]){ body.innerHTML = paragraphs(cache[slot]); return; }
-
-  /* A book the catalogue does not have may use the shared key; a catalogue
-     book uses the reader's own. If there is neither, ask for one right here,
-     at the moment it is needed. */
-  var key = book.external ? keyForMissingBook() : store.get(KEY_NAME);
-  if (!key){ body.innerHTML = keyPrompt(); return; }
-
-  body.innerHTML = '<p class="loading">' +
-    (book.external ? "Looking this one up" : "Writing the summary") + '</p>';
-
-  askGemini(buildPrompt(book, want), key).then(function(text){
-    cache[slot] = text;
-    /* The reader may have switched depth while this was in flight. */
-    if (state.book === book && state.length === want) body.innerHTML = paragraphs(text);
-  }).catch(function(err){
-    if (state.book !== book || state.length !== want) return;
-    /* Only a rejected key is worth replacing. A busy server just needs
-       another go. */
-    body.innerHTML =
-      '<p class="note">That could not be written. ' + esc(friendlyError(err)) + '</p>' +
-      (isKeyError(err)
-        ? keyPrompt("Paste a different key:")
-        : '<div class="row"><button class="btn ghost" onclick="renderSummary()">Try again</button></div>');
-  });
-}
-
 /* --------------------------------------------------------------------------
-   THE KEY
+   8. NEAREST BOOKS
 
-   Brevis is a static page with no server, so it cannot hold a key of its own:
-   any file this page could read, a visitor could read too, and a Gemini key
-   left in a public repository is scraped within hours. So each reader brings
-   their own, once, at the moment it is first needed, and it stays in their
-   browser and nowhere else.
+   Every book has a vector in vectors.json, made offline by build_dataset.py
+   from its blurb. Books whose vectors point the same way are alike, so
+   finding similar books is arithmetic on data already in the page.
    -------------------------------------------------------------------------- */
-/* What to do once a key has been saved - set by whoever showed the prompt. */
-var afterKey = null;
-
-function keyPrompt(lead, then){
-  afterKey = then || renderSummary;
-  return '<p class="note">' + esc(lead || "Summaries are written on demand by Google Gemini. " +
-    "Paste a free key from aistudio.google.com/apikey - it stays in this browser " +
-    "and is sent to nobody but Google.") + '</p>' +
-    '<input class="field" type="password" autocomplete="off" ' +
-      'autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="Paste your key">' +
-    '<div class="row"><button class="btn" onclick="saveInlineKey(this)">Save and continue</button></div>';
-}
-
-/* The prompt can be on more than one screen at once (hidden screens keep their
-   contents), so find the box beside the button that was pressed rather than
-   looking it up by id. */
-function saveInlineKey(button){
-  var box = button.parentNode.previousElementSibling;
-  var value = box.value.trim();
-  if (!value) return;
-
-  if (!store.set(KEY_NAME, value)){
-    box.parentNode.innerHTML =
-      '<p class="note">This browser will not let the key be stored - private ' +
-      'browsing blocks it.</p>';
-    return;
-  }
-  var next = afterKey || renderSummary;
-  afterKey = null;
-  next();
-}
-
-/* --------------------------------------------------------------------------
-   The one place Gemini starts on its own initiative: a reader has named a
-   book or an author the catalogue does not have. Everything up to this point
-   is served from the local dataset.
-   -------------------------------------------------------------------------- */
-function askAbout(query){
-  var here = currentScreen();
-  if (here !== "summary") state.back = here;
-  state.book = { t:query, a:"", r:0, y:0, g:[], d:"", external:true };
-  resetTiers();
-
-  document.getElementById("summaryTitle").textContent = query;
-  document.getElementById("summaryMeta").textContent = "Not in the catalogue";
-  document.getElementById("recs").innerHTML = "";
-
-  go("summary");
-  renderSummary();
-}
-
-/* Split on blank lines and escape every piece. Model output is never
-   written to the page as raw HTML. */
-function paragraphs(text){
-  var parts = String(text).split(/\n\s*\n/);
-  var html = "";
-  for (var i=0; i<parts.length; i++){
-    var p = parts[i].trim();
-    if (p) html += "<p>" + esc(p) + "</p>";
-  }
-  return '<div class="prose">' + (html || "<p>Nothing came back.</p>") + "</div>";
-}
-
-/* Turn whatever went wrong into one plain sentence. Never a stack trace. */
-function friendlyError(err){
-  var m = (err && err.message) ? err.message : String(err);
-  if (isKeyError(err))                     return "Google rejected the key (" + m + ").";
-  if (/\b429\b|quota/i.test(m))          return "The free-tier limit has been reached, even after retrying (" + m + "). Try again in a minute.";
-  if (/\b40[0-9]\b/.test(m))             return "Google refused the request (" + m + ").";
-  if (/\b5[0-9][0-9]\b/.test(m))         return "Google's servers were busy, even after retrying (" + m + "). Try again in a minute.";
-  if (/Failed to fetch|NetworkError|Load failed/i.test(m))
-    return "No network connection reached Google.";
-  return m;
-}
-
-/* A bad key, as opposed to a busy server: worth offering to replace it. */
-function isKeyError(err){
-  var m = (err && err.message) ? err.message : String(err);
-  return /\b401\b|\b403\b|API.key/i.test(m);
-}
-
-/* One POST to Gemini. Google's servers answer "overloaded" (503) or "rate
-   limited" (429) from time to time, and those usually clear within seconds,
-   so they are retried twice with a growing pause - 1s, then 2s - before
-   giving up. Anything else (a bad key, a bad request) fails at once, because
-   asking again would not change the answer.
-
-   The error carries Google's own explanation and the HTTP status, so a
-   failure shown to the reader says what actually went wrong. */
-var RETRIES = 2;
-
-function retryable(status){ return status === 429 || status >= 500; }
-
-function postGemini(url, body, attempt){
-  attempt = attempt || 0;
-  return fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  }).then(function(res){
-    if (res.ok) return res.json();
-    return res.json().catch(function(){ return {}; }).then(function(data){
-      var reason = (data && data.error && data.error.message) || "";
-      var err = new Error("HTTP " + res.status + (reason ? " - " + reason : ""));
-      err.status = res.status;
-      if (retryable(res.status) && attempt < RETRIES){
-        return new Promise(function(done){ setTimeout(done, 1000 * Math.pow(2, attempt)); })
-          .then(function(){ return postGemini(url, body, attempt + 1); });
-      }
-      throw err;
-    });
-  });
-}
-
-function askGemini(prompt, key, model){
-  model = model || WRITER_MODEL;
-  var url = "https://generativelanguage.googleapis.com/v1beta/" + model +
-            ":generateContent?key=" + encodeURIComponent(key);
-
-  return postGemini(url, {
-    contents: [ { parts: [ { text: prompt } ] } ],
-    generationConfig: { temperature: 0.4, maxOutputTokens: 3000 }
-  }).then(function(data){
-    var cand = data && data.candidates && data.candidates[0];
-    var parts = cand && cand.content && cand.content.parts;
-    if (!parts || !parts.length) throw new Error("Gemini returned no text.");
-    var out = "";
-    for (var i=0; i<parts.length; i++) if (parts[i].text) out += parts[i].text;
-    if (!out.trim()) throw new Error("Gemini returned no text.");
-    return out.trim();
-  }).catch(function(err){
-    /* Still overloaded after the retries: try the fallback model once. This
-       comes after the text is pulled out, so either way the caller gets text. */
-    if (model !== FALLBACK_MODEL && err.status && retryable(err.status)){
-      return askGemini(prompt, key, FALLBACK_MODEL);
-    }
-    throw err;
-  });
-}
-
-/* --------------------------------------------------------------------------
-   8. SEARCH BY MEANING
-
-   Compares meanings rather than letters: a piece of text is turned into a
-   vector by Gemini and compared against the vector of every book in
-   vectors.json. Those were made by the same model at the same size, so they
-   live in the same space and a dot product ranks them. Used for books the
-   catalogue does not have; books it does have use their stored vector and
-   need no API call at all.
-   -------------------------------------------------------------------------- */
-
-function embedQuery(text, key){
-  var url = "https://generativelanguage.googleapis.com/v1beta/" +
-            VECTORS.model + ":embedContent?key=" + encodeURIComponent(key);
-
-  /* No fallback model here: the query vector must come from the same model
-     as the catalogue's vectors, or the comparison is meaningless. */
-  return postGemini(url, {
-    model: VECTORS.model,
-    content: { parts: [ { text: text } ] },
-    taskType: "RETRIEVAL_QUERY",
-    outputDimensionality: VECTORS.dims
-  }).then(function(data){
-    var v = data && data.embedding && data.embedding.values;
-    if (!v || !v.length) throw new Error("No vector came back.");
-    return v;
-  });
-}
 
 /* Ranking by plain cosine similarity has a known flaw called hubness: a few
    books sit close to everything and turn up in everyone's list. Here Atonement
@@ -1481,15 +1068,12 @@ function nearestBooks(query, howMany){
    nearest to it. Those neighbours were worked out offline by build_dataset.py
    from the Chroma embeddings and ship inside books.json (each book's s field),
    so this costs nothing: no API call, no key, no wait.
-
-   Only a book the catalogue does not have needs Gemini - and only on a tap.
    -------------------------------------------------------------------------- */
 
 /* Best matches first: exact title, then title starting with what was typed,
    then a word in the title starting with it, then anywhere in the title, then
    every typed word starting some word of the title ("way kings"), then the
-   author, and only if all of that finds nothing, the blurb. Ties go to the
-   better-rated book. */
+   author. Ties go to the better-rated book. */
 function matchTitles(query, howMany){
   var q = norm(query);
   if (q.length < 2) return [];
@@ -1506,18 +1090,27 @@ function matchTitles(query, howMany){
     else if (b._na.indexOf(q) !== -1)           s = 1;
     if (s) scored.push({ b:b, s:s + b.r / 100 });
   }
-  /* Nothing in any title or author. People often type a series name -
-     "mistborn", "stormlight" - which the stored titles leave out but the
-     blurbs mention. Only as a fallback, and only as whole words, because a
-     common word like "love" turns up in hundreds of blurbs. */
-  if (!scored.length && q.length >= 4){
-    for (var j=0; j<BOOKS.length; j++){
-      if (BOOKS[j]._nx.indexOf(" " + q + " ") !== -1) scored.push({ b:BOOKS[j], s:BOOKS[j].r });
-    }
+  return topOf(scored, howMany);
+}
+
+/* Books whose blurb mentions what was typed, as a whole phrase. Used only when
+   no title or author matches, and shown as such - "these books mention it",
+   never as if they were the book itself. It finds series names the stored
+   titles leave out ("mistborn" -> The Final Empire), and books pitched at fans
+   of one the catalogue lacks ("for fans of The Hunger Games"). Whole words
+   only, because a common word like "love" turns up in hundreds of blurbs. */
+function matchBlurbs(query, howMany){
+  var q = norm(query);
+  if (q.length < 4) return [];
+  var scored = [];
+  for (var i=0; i<BOOKS.length; i++){
+    if (BOOKS[i]._nx.indexOf(" " + q + " ") !== -1) scored.push({ b:BOOKS[i], s:BOOKS[i].r });
   }
+  return topOf(scored, howMany);
+}
 
+function topOf(scored, howMany){
   scored.sort(function(x,y){ return y.s - x.s; });
-
   var out = [];
   for (var k=0; k<scored.length && out.length<howMany; k++) out.push(scored[k].b);
   return out;
@@ -1536,14 +1129,16 @@ function renderLike(){
 
   if (q.length < 2){ out.innerHTML = ""; return; }
 
-  var hits = matchTitles(q, 6);
+  var hits = matchTitles(q, 6), lead = "";
   if (!hits.length){
-    out.innerHTML = '<p class="empty">That one is not in the catalogue.</p>' +
-      '<button class="card" onclick="likeOutside(' + jsArg(q) + ')">' +
-        '<span class="name">Find books like &ldquo;' + esc(q) + '&rdquo;</span>' +
-        '<span class="hook">Brevis will search the catalogue by meaning instead.</span>' +
-      '</button>';
-    return;
+    hits = matchBlurbs(q, 6);
+    if (!hits.length){
+      out.innerHTML = '<p class="empty">That one is not in the catalogue. Try another ' +
+        'title, an author, or a series name.</p>';
+      return;
+    }
+    lead = '<p class="sub" style="margin:14px 0 12px">No title by that name. These books ' +
+      'mention <strong>' + esc(q) + '</strong>:</p>';
   }
 
   var html = "";
@@ -1554,7 +1149,7 @@ function renderLike(){
               '<span class="meta">' + esc(b.a) + (b.y ? ' &middot; ' + b.y : '') + '</span>' +
             '</button>';
   }
-  out.innerHTML = '<div class="stack">' + html + '</div>';
+  out.innerHTML = lead + '<div class="stack">' + html + '</div>';
 }
 
 /* The reader picked their book: show its five nearest neighbours. */
@@ -1575,69 +1170,6 @@ function showLike(index){
       'Or read about ' + esc(book.t) + ' itself</button></p>';
 }
 
-/* A book the catalogue has never heard of, so there is no stored vector to
-   start from. Embedding the bare title does not work: "Gone Girl" lands next
-   to a book called "Gone", because a title is a few words with no meaning
-   attached. So Gemini first writes a short blurb for it, and THAT is embedded.
-   The catalogue's vectors were made from blurbs, so a blurb lands in the same
-   neighbourhood as books that are actually alike. Two calls, only on a tap. */
-function describePrompt(query){
-  return "Describe the novel \"" + query + "\" in two or three plain sentences, the way a " +
-    "publisher's blurb would: the premise, the setting, the genre and the tone. No " +
-    "spoilers, no markdown. If you do not know a novel by that name, reply with exactly " +
-    "the word UNKNOWN and nothing else.";
-}
-function likeOutside(query){
-  var out = document.getElementById("likeList");
-
-  if (!VECTORS){
-    out.innerHTML = '<p class="note">Finding neighbours for a book outside the catalogue ' +
-      'needs vectors.json, which build_dataset.py writes.</p>';
-    return;
-  }
-
-  var key = keyForMissingBook();
-  if (!key){
-    out.innerHTML = keyPrompt("Finding books like one outside the catalogue needs a Gemini " +
-      "key. Paste a free one from aistudio.google.com/apikey - it stays in this browser.",
-      function(){ likeOutside(query); });
-    return;
-  }
-
-  out.innerHTML = '<p class="loading">Looking</p>';
-  var blurb = "", step = "describing the book";
-  askGemini(describePrompt(query), key).then(function(text){
-    blurb = text.trim();
-    if (/^UNKNOWN\b/i.test(blurb)) throw new Error("UNKNOWN");
-    step = "matching it against the catalogue";
-    return embedQuery(blurb, key);
-  }).then(function(vec){
-    var hits = nearestBooks(vec, 5);
-    /* Show how Gemini read the title, so a misidentified book is obvious. */
-    out.innerHTML = '<p class="sub" style="margin:22px 0 8px">Closest in the catalogue to <strong>' +
-      esc(query) + '</strong>:</p>' +
-      '<p class="sub" style="margin:0 0 14px;font-style:italic">' + esc(blurb) + '</p>' +
-      '<div class="stack">' + (bookCards(hits) || '<p class="empty">Nothing close enough.</p>') + '</div>';
-  }).catch(function(err){
-    if (err && err.message === "UNKNOWN"){
-      out.innerHTML = '<p class="note">Brevis does not recognise a novel called &ldquo;' +
-        esc(query) + '&rdquo;. Check the spelling, or try the full title.</p>';
-      return;
-    }
-    /* A rejected key gets a box to paste a different one. There is no
-       settings screen, so without this a bad saved key could never be
-       replaced. */
-    if (isKeyError(err)){
-      out.innerHTML = '<p class="note">Could not search: ' + esc(friendlyError(err)) + '</p>' +
-        keyPrompt("Paste a different key:", function(){ likeOutside(query); });
-      return;
-    }
-    out.innerHTML = '<p class="note">Could not search while ' + step + ': ' +
-      esc(friendlyError(err)) + '</p>' +
-      '<div class="row"><button class="btn ghost" onclick="likeOutside(' + jsArg(query) + ')">Try again</button></div>';
-  });
-}
-
 /* --------------------------------------------------------------------------
    10. START
    -------------------------------------------------------------------------- */
@@ -1652,7 +1184,6 @@ document.getElementById("likeBox").addEventListener("keydown", function(e){
   e.preventDefault();
   var best = matchTitles(this.value, 1)[0];
   if (best) showLike(best._i);
-  else if (this.value.trim().length >= 2) likeOutside(this.value.trim());
 });
 </script>
 </body>
